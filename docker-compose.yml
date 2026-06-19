@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # ── Next.js App ──────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kgt_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=mysql://kgt_user:kgt_password@mysql:3306/kaniz_global_trade
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+    networks:
+      - kgt_network
+
+  # ── Socket.IO Server ─────────────────────────────────────
+  socket:
+    build:
+      context: .
+      dockerfile: Dockerfile.socket
+    container_name: kgt_socket
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - mysql
+    networks:
+      - kgt_network
+
+  # ── MySQL 8 ───────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: kgt_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: kaniz_global_trade
+      MYSQL_USER: kgt_user
+      MYSQL_PASSWORD: kgt_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kgt_network
+
+  # ── Redis ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: kgt_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kgt_network
+
+  # ── Meilisearch ───────────────────────────────────────────
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    container_name: kgt_meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_MASTER_KEY=${MEILISEARCH_API_KEY:-masterKey123}
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meili_data:/meili_data
+    networks:
+      - kgt_network
+
+  # ── Nginx ─────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: kgt_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - app
+      - socket
+    networks:
+      - kgt_network
+
+volumes:
+  mysql_data:
+  redis_data:
+  meili_data:
+
+networks:
+  kgt_network:
+    driver: bridge
