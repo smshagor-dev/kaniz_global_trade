@@ -1,6 +1,11 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/store/auth'
 
+function emitLoadingEvent(type: 'request-start' | 'request-end' | 'pulse') {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('kgt:loading', { detail: { type } }))
+}
+
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
@@ -9,6 +14,7 @@ const api = axios.create({
 
 // Request interceptor — attach access token
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  emitLoadingEvent('request-start')
   const token = useAuthStore.getState().accessToken
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
@@ -19,11 +25,16 @@ let isRefreshing = false
 let refreshQueue: Array<(token: string) => void> = []
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    emitLoadingEvent('request-end')
+    return res
+  },
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
 
     if (error.response?.status === 401 && !original._retry) {
+      emitLoadingEvent('request-end')
+
       if (isRefreshing) {
         return new Promise((resolve) => {
           refreshQueue.push((token) => {
@@ -38,9 +49,10 @@ api.interceptors.response.use(
 
       try {
         const refreshToken = useAuthStore.getState().refreshToken
+        const rememberMe = useAuthStore.getState().rememberMe
         if (!refreshToken) throw new Error('No refresh token')
 
-        const { data } = await axios.post('/api/auth/refresh', { refreshToken })
+        const { data } = await axios.post('/api/auth/refresh', { refreshToken, rememberMe })
         const { accessToken, refreshToken: newRefresh } = data.data
 
         useAuthStore.getState().setTokens(accessToken, newRefresh)
@@ -60,6 +72,7 @@ api.interceptors.response.use(
       }
     }
 
+    emitLoadingEvent('request-end')
     return Promise.reject(error)
   }
 )

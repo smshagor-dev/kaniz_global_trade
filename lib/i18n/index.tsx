@@ -2,10 +2,13 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
-export const SUPPORTED_LANGUAGES = ['en', 'zh', 'ar', 'es', 'nl', 'pt'] as const
+export const SUPPORTED_LANGUAGES = [
+  'en', 'zh', 'ar', 'es', 'nl', 'pt', 'fr', 'de', 'it', 'tr', 'ru', 'ja',
+  'ko', 'hi', 'bn', 'ur', 'id', 'vi', 'th', 'pl', 'fa', 'ms',
+] as const
 export type Language = (typeof SUPPORTED_LANGUAGES)[number]
 
-const dictionaries: Record<Language, Record<string, string>> = {
+const dictionaries: Partial<Record<Language, Record<string, string>>> = {
   en: {
     products: 'Products',
     suppliers: 'Suppliers',
@@ -134,7 +137,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     () => ({
       language,
       setLanguage: setLanguageState,
-      t: (key: string) => dictionaries[language][key] || dictionaries.en[key] || key,
+      t: (key: string) => dictionaries[language]?.[key] || dictionaries.en?.[key] || key,
     }),
     [language]
   )

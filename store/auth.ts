@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { PersistStorage, StorageValue } from 'zustand/middleware'
 
 interface AuthUser {
   id: string
@@ -16,12 +17,40 @@ interface AuthState {
   user: AuthUser | null
   accessToken: string | null
   refreshToken: string | null
+  rememberMe: boolean
   isLoading: boolean
   setAuth: (user: AuthUser, accessToken: string, refreshToken: string) => void
   updateUser: (user: Partial<AuthUser>) => void
   setTokens: (accessToken: string, refreshToken: string) => void
+  setRememberMe: (rememberMe: boolean) => void
   clearAuth: () => void
   setLoading: (loading: boolean) => void
+}
+
+type PersistedAuthState = Pick<AuthState, 'user' | 'accessToken' | 'refreshToken' | 'rememberMe'>
+
+const authStorage: PersistStorage<PersistedAuthState> = {
+  getItem: (name) => {
+    if (typeof window === 'undefined') return null
+    const raw = window.sessionStorage.getItem(name) || window.localStorage.getItem(name)
+    if (!raw) return null
+    return JSON.parse(raw) as StorageValue<PersistedAuthState>
+  },
+  setItem: (name, value) => {
+    if (typeof window === 'undefined') return
+
+    const shouldRemember = value.state?.rememberMe ?? false
+    const target = shouldRemember ? window.localStorage : window.sessionStorage
+    const other = shouldRemember ? window.sessionStorage : window.localStorage
+
+    target.setItem(name, JSON.stringify(value))
+    other.removeItem(name)
+  },
+  removeItem: (name) => {
+    if (typeof window === 'undefined') return
+    window.localStorage.removeItem(name)
+    window.sessionStorage.removeItem(name)
+  },
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -30,6 +59,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       refreshToken: null,
+      rememberMe: true,
       isLoading: false,
 
       setAuth: (user, accessToken, refreshToken) =>
@@ -43,6 +73,9 @@ export const useAuthStore = create<AuthState>()(
       setTokens: (accessToken, refreshToken) =>
         set({ accessToken, refreshToken }),
 
+      setRememberMe: (rememberMe) =>
+        set({ rememberMe }),
+
       clearAuth: () =>
         set({ user: null, accessToken: null, refreshToken: null }),
 
@@ -50,10 +83,12 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'kgt-auth',
+      storage: authStorage,
       partialize: (state) => ({
         user:         state.user,
         accessToken:  state.accessToken,
         refreshToken: state.refreshToken,
+        rememberMe:   state.rememberMe,
       }),
     }
   )

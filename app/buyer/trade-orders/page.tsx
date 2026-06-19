@@ -22,8 +22,8 @@ export default function BuyerTradeOrdersPage() {
   const [disputeReason, setDisputeReason] = useState<Record<string, string>>({})
   const [rating, setRating] = useState<Record<string, number>>({})
 
-  async function fund(orderId: string) {
-    const response = await post<{ checkoutUrl?: string }>(`/trade-orders/${orderId}/fund`, { method: 'STRIPE' })
+  async function fund(orderId: string, method: 'STRIPE' | 'SSLCOMMERZ' | 'AAMARPAY' | 'NOWPAYMENTS') {
+    const response = await post<{ checkoutUrl?: string }>(`/trade-orders/${orderId}/fund`, { method })
     const checkoutUrl = response.data?.checkoutUrl
     if (checkoutUrl) {
       window.location.href = checkoutUrl
@@ -97,7 +97,12 @@ export default function BuyerTradeOrdersPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {order.status === 'PENDING_ESCROW_PAYMENT' && (
-                  <button onClick={() => fund(order.id)} className="px-3 py-2 rounded-lg bg-blue-700 text-white text-sm">Pay with Stripe</button>
+                  <>
+                    <button onClick={() => fund(order.id, 'STRIPE')} className="px-3 py-2 rounded-lg bg-blue-700 text-white text-sm">Pay with Stripe</button>
+                    <button onClick={() => fund(order.id, 'SSLCOMMERZ')} className="px-3 py-2 rounded-lg bg-emerald-700 text-white text-sm">Pay with SSLCommerz</button>
+                    <button onClick={() => fund(order.id, 'AAMARPAY')} className="px-3 py-2 rounded-lg bg-sky-700 text-white text-sm">Pay with aamarPay</button>
+                    <button onClick={() => fund(order.id, 'NOWPAYMENTS')} className="px-3 py-2 rounded-lg bg-orange-600 text-white text-sm">Pay with NOWPayments</button>
+                  </>
                 )}
                 {['DELIVERED', 'SHIPPED', 'ESCROW_FUNDED'].includes(order.status) && (
                   <button onClick={() => release(order.id)} className="px-3 py-2 rounded-lg bg-green-700 text-white text-sm">Release Payment</button>

@@ -7,7 +7,8 @@ import { z } from 'zod'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { post } from '@/lib/utils/api-client'
-import { Globe2, Eye, EyeOff, Loader2, Building2, ShoppingBag } from 'lucide-react'
+import { Globe2, Eye, EyeOff, Building2, ShoppingBag } from 'lucide-react'
+import { LoadingButton } from '@/components/ui/loading-button'
 import toast from 'react-hot-toast'
 
 const schema = z.object({
@@ -53,13 +54,15 @@ function RegisterPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-700 to-blue-800 p-8 text-center">
+    <div className="relative min-h-screen overflow-hidden flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/auth-b2b-bg.svg')" }}>
+      <div className="pointer-events-none absolute inset-0 bg-slate-950/35" />
+      <div className="bg-white/95 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden backdrop-blur">
+        <div className="relative overflow-hidden bg-[linear-gradient(135deg,_#1d4ed8_0%,_#0f766e_50%,_#166534_100%)] p-8 text-center">
+          <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.35) 0 2px, transparent 2px 14px)' }} />
           <Link href="/" className="inline-flex items-center gap-2 text-white font-bold text-xl mb-2">
             <Globe2 className="w-7 h-7" /> Kaniz Global Trade
           </Link>
-          <p className="text-blue-200 text-sm">Create your free account</p>
+          <p className="relative z-10 text-emerald-50 text-sm">Create your textile sourcing and export account</p>
         </div>
 
         <div className="p-8">
@@ -130,14 +133,14 @@ function RegisterPageContent() {
             </label>
             {errors.terms && <p className="text-red-500 text-xs">{errors.terms.message}</p>}
 
-            <button
+            <LoadingButton
               type="submit"
-              disabled={isSubmitting}
+              loading={isSubmitting}
+              loadingText="Creating Account..."
               className="w-full bg-blue-700 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
             >
-              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
               Create Account
-            </button>
+            </LoadingButton>
           </form>
 
           <p className="text-center text-sm text-gray-500 mt-5">

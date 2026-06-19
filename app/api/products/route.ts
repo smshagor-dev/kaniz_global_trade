@@ -6,6 +6,7 @@ import { successResponse, handleApiError, getPaginationParams, paginationMeta } 
 import { logCreate } from '@/lib/utils/audit'
 import { indexProduct } from '@/lib/search'
 import { createNotification } from '@/server/services/notification'
+import { uniqueSlug } from '@/lib/utils/slug'
 
 const createProductSchema = z.object({
   companyId: z.string(),
@@ -53,22 +54,29 @@ export async function GET(req: NextRequest) {
     }
 
     const categoryId = searchParams.get('categoryId')
+    const subcategoryId = searchParams.get('subcategoryId')
     const companyId = searchParams.get('companyId')
     const status = searchParams.get('status')
     const isFeatured = searchParams.get('isFeatured')
     const countryId = searchParams.get('countryId')
+    const verified = searchParams.get('verified')
     const search = searchParams.get('q')
 
     if (categoryId) where.categoryId = categoryId
+    if (subcategoryId) where.subcategoryId = subcategoryId
     if (companyId && isAdmin(authUser!)) where.companyId = companyId
     if (status && isAdmin(authUser!)) where.status = status
     if (isFeatured === 'true') where.isFeatured = true
+    if (verified === 'true') where.company = { verificationStatus: { in: ['ADMIN_VERIFIED', 'PREMIUM_VERIFIED'] } }
 
     if (search) {
       where.OR = [
         { name: { contains: search } },
         { shortDescription: { contains: search } },
         { sku: { contains: search } },
+        { category: { name: { contains: search } } },
+        { subcategory: { name: { contains: search } } },
+        { company: { name: { contains: search } } },
       ]
     }
 
@@ -95,6 +103,8 @@ export async function GET(req: NextRequest) {
             },
           },
           category: { select: { id: true, name: true, slug: true } },
+          subcategory: { select: { id: true, name: true, slug: true } },
+          currency: { select: { id: true, code: true, symbol: true } },
         },
       }),
       prisma.product.count({ where }),
@@ -131,18 +141,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Generate unique slug
-    const baseSlug = data.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .substring(0, 80)
-
-    let slug = baseSlug
-    let counter = 0
-    while (await prisma.product.findUnique({ where: { slug } })) {
-      counter++
-      slug = `${baseSlug}-${counter}`
-    }
+    const slug = await uniqueSlug(data.name, async (candidate) => {
+      const existing = await prisma.product.findUnique({ where: { slug: candidate }, select: { id: true } })
+      return !!existing
+    })
 
     const product = await prisma.product.create({
       data: {

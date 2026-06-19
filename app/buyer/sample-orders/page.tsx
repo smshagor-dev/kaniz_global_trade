@@ -65,6 +65,9 @@ export default function BuyerSampleOrdersPage() {
         <input placeholder="Shipping Address" value={form.shippingAddress} onChange={(e) => setForm((p) => ({ ...p, shippingAddress: e.target.value }))} className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
         <select value={form.paymentMethod} onChange={(e) => setForm((p) => ({ ...p, paymentMethod: e.target.value }))} className="border border-gray-200 rounded-lg px-3 py-2 text-sm md:col-span-2">
           <option value="STRIPE">Stripe Checkout</option>
+          <option value="SSLCOMMERZ">SSLCommerz (Bangladesh)</option>
+          <option value="AAMARPAY">aamarPay (Bangladesh)</option>
+          <option value="NOWPAYMENTS">NOWPayments (Crypto)</option>
           <option value="MANUAL">Manual Payment</option>
           <option value="BANK_TRANSFER">Bank Transfer</option>
         </select>

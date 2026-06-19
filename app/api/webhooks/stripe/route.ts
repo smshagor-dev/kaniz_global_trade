@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { constructWebhookEvent } from '@/lib/payment/stripe'
 import prisma from '@/lib/db/prisma'
 import { createNotification } from '@/server/services/notification'
-import { sendSubscriptionExpiryEmail } from '@/lib/email'
+import { sendInvoicePaidEmail } from '@/lib/email'
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
           break
         }
 
-        const { companyId, planId } = metadata
+        const { companyId, planId, billingCycle } = metadata
         if (!companyId || !planId) break
 
         const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
@@ -134,7 +134,8 @@ export async function POST(req: NextRequest) {
 
         const now = new Date()
         const periodEnd = new Date(now)
-        periodEnd.setMonth(periodEnd.getMonth() + 1)
+        if (billingCycle === 'YEARLY') periodEnd.setFullYear(periodEnd.getFullYear() + 1)
+        else periodEnd.setMonth(periodEnd.getMonth() + 1)
 
         await prisma.subscription.upsert({
           where: { companyId },
@@ -142,7 +143,7 @@ export async function POST(req: NextRequest) {
             companyId,
             planId,
             status: 'ACTIVE',
-            billingCycle: 'MONTHLY',
+            billingCycle: billingCycle || 'MONTHLY',
             currentPeriodStart: now,
             currentPeriodEnd: periodEnd,
             stripeCustomerId: session.customer as string,
@@ -151,6 +152,7 @@ export async function POST(req: NextRequest) {
           update: {
             planId,
             status: 'ACTIVE',
+            billingCycle: billingCycle || 'MONTHLY',
             currentPeriodStart: now,
             currentPeriodEnd: periodEnd,
             stripeCustomerId: session.customer as string,
@@ -187,12 +189,14 @@ export async function POST(req: NextRequest) {
 
         const sub = await prisma.subscription.findFirst({
           where: { stripeSubId: invoice.subscription as string },
+          include: { plan: true },
         })
         if (!sub) break
 
         const now = new Date()
         const periodEnd = new Date(now)
-        periodEnd.setMonth(periodEnd.getMonth() + 1)
+        if (sub.billingCycle === 'YEARLY') periodEnd.setFullYear(periodEnd.getFullYear() + 1)
+        else periodEnd.setMonth(periodEnd.getMonth() + 1)
 
         await prisma.subscription.update({
           where: { id: sub.id },
@@ -222,7 +226,7 @@ export async function POST(req: NextRequest) {
 
         const owner = await prisma.companyUser.findFirst({
           where: { companyId: sub.companyId, isPrimary: true },
-          include: { user: { select: { id: true } } },
+          include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
         })
         if (owner) {
           await prisma.payment.create({
@@ -243,6 +247,28 @@ export async function POST(req: NextRequest) {
             message: `Invoice ${invoiceNumber} paid: $${amount}`,
             data: { invoiceId: dbInvoice.id },
           })
+
+          const company = await prisma.company.findUnique({
+            where: { id: sub.companyId },
+            select: { name: true },
+          })
+
+          try {
+            await sendInvoicePaidEmail({
+              to: owner.user.email,
+              customerName: `${owner.user.firstName} ${owner.user.lastName}`.trim(),
+              companyName: company?.name || 'Your company',
+              invoiceNumber,
+              amount,
+              currency: dbInvoice.currency,
+              planName: sub.plan.name,
+              paymentMethod: 'Stripe',
+              paidAt: dbInvoice.paidAt || now,
+              dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`,
+            })
+          } catch (error) {
+            console.error('Stripe invoice email failed:', error)
+          }
         }
         break
       }

@@ -164,7 +164,7 @@ export default async function PricingPage() {
         <div className="space-y-4">
           {[
             { q: 'Can I switch plans anytime?', a: 'Yes, you can upgrade or downgrade your plan at any time. Changes take effect immediately.' },
-            { q: 'What payment methods do you accept?', a: 'We accept credit/debit cards via Stripe, PayPal, and manual bank transfers.' },
+            { q: 'What payment methods do you accept?', a: 'We accept credit/debit cards via Stripe, SSLCommerz and aamarPay for Bangladesh, PayPal, and manual bank transfers.' },
             { q: 'Is there a free trial?', a: 'Standard, Premium and Enterprise plans include free trials (7, 14, and 30 days respectively).' },
             { q: 'What happens to my products if I downgrade?', a: 'Products over your new plan limit will be hidden but not deleted. Upgrade to restore visibility.' },
             { q: 'Do you offer refunds?', a: 'We offer a 7-day money-back guarantee on all paid plans. Contact support within 7 days of purchase.' },

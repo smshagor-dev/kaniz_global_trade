@@ -8,29 +8,35 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { post } from '@/lib/utils/api-client'
 import { useAuthStore } from '@/store/auth'
-import { Globe2, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Globe2, Eye, EyeOff } from 'lucide-react'
+import { LoadingButton } from '@/components/ui/loading-button'
 import toast from 'react-hot-toast'
 
 const schema = z.object({
   email:          z.string().email('Invalid email'),
   password:       z.string().min(1, 'Password required'),
   twoFactorCode:  z.string().optional(),
+  rememberMe:     z.boolean().default(true),
 })
 type FormData = z.infer<typeof schema>
 
 function LoginPageContent() {
   const router      = useRouter()
   const params      = useSearchParams()
-  const { setAuth } = useAuthStore()
+  const { setAuth, rememberMe: savedRememberMe, setRememberMe } = useAuthStore()
   const [showPass, setShowPass]   = useState(false)
   const [needs2FA, setNeeds2FA]   = useState(false)
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: {
+      rememberMe: savedRememberMe,
+    },
   })
 
   async function onSubmit(data: FormData) {
     try {
+      setRememberMe(data.rememberMe)
       const resp = await post<{
         accessToken?: string; refreshToken?: string
         requiresTwoFactor?: boolean
@@ -61,14 +67,16 @@ function LoginPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div className="relative min-h-screen overflow-hidden flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/auth-b2b-bg.svg')" }}>
+      <div className="pointer-events-none absolute inset-0 bg-slate-950/35" />
+      <div className="bg-white/95 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden backdrop-blur">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-700 to-blue-800 p-8 text-center">
+        <div className="relative overflow-hidden bg-[linear-gradient(135deg,_#0f766e_0%,_#155e75_45%,_#1d4ed8_100%)] p-8 text-center">
+          <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 2px, transparent 2px 14px)' }} />
           <Link href="/" className="inline-flex items-center gap-2 text-white font-bold text-xl mb-2">
             <Globe2 className="w-7 h-7" /> Kaniz Global Trade
           </Link>
-          <p className="text-blue-200 text-sm">Sign in to your account</p>
+          <p className="relative z-10 text-cyan-100 text-sm">Sign in to your textile and trade workspace</p>
         </div>
 
         <div className="p-8">
@@ -87,7 +95,6 @@ function LoginPageContent() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-sm font-semibold text-gray-700">Password</label>
-                <Link href="/auth/forgot-password" className="text-xs text-blue-700 hover:underline">Forgot password?</Link>
               </div>
               <div className="relative">
                 <input
@@ -107,6 +114,20 @@ function LoginPageContent() {
               {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
             </div>
 
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input
+                  {...register('rememberMe')}
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+                />
+                <span>Remember me</span>
+              </label>
+              <Link href="/auth/forgot-password" className="text-sm text-blue-700 hover:underline">
+                Forgot password?
+              </Link>
+            </div>
+
             {needs2FA && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Two-Factor Code</label>
@@ -119,14 +140,14 @@ function LoginPageContent() {
               </div>
             )}
 
-            <button
+            <LoadingButton
               type="submit"
-              disabled={isSubmitting}
+              loading={isSubmitting}
+              loadingText="Signing In..."
               className="w-full bg-blue-700 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
             >
-              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
               Sign In
-            </button>
+            </LoadingButton>
           </form>
 
           <p className="text-center text-sm text-gray-500 mt-6">

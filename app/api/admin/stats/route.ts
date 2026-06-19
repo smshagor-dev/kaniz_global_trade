@@ -37,6 +37,8 @@ export async function GET(req: NextRequest) {
       openInsuranceClaims,
       openFinancingRequests,
       commissionRevenue,
+      paidInvoicesMonth,
+      pendingManualPayments,
     ] = await Promise.all([
       prisma.user.count({ where: { deletedAt: null } }),
       prisma.userRole.count({ where: { role: { name: 'BUYER' } } }),
@@ -68,10 +70,12 @@ export async function GET(req: NextRequest) {
         where: { status: { in: ['ACCRUED', 'SETTLED'] }, recognizedAt: { gte: month } },
         _sum: { amount: true },
       }),
+      prisma.invoice.count({ where: { status: 'PAID', createdAt: { gte: month } } }),
+      prisma.manualPaymentRequest.count({ where: { status: 'PENDING' } }),
     ])
 
     // User growth (last 30 days)
-    const userGrowth = await prisma.$queryRaw<{ date: string; count: number }[]>`
+    const userGrowth = await prisma.$queryRaw<{ date: string | Date; count: number | bigint }[]>`
       SELECT DATE(createdAt) as date, COUNT(*) as count
       FROM User
       WHERE createdAt >= ${last30} AND deletedAt IS NULL
@@ -80,13 +84,38 @@ export async function GET(req: NextRequest) {
     `
 
     // Revenue trend (last 12 months)
-    const revenueTrend = await prisma.$queryRaw<{ month: string; revenue: number }[]>`
+    const revenueTrend = await prisma.$queryRaw<{ month: string; revenue: number | bigint | null }[]>`
       SELECT DATE_FORMAT(createdAt, '%Y-%m') as month, SUM(amount) as revenue
       FROM Payment
       WHERE status = 'PAID' AND createdAt >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
       GROUP BY DATE_FORMAT(createdAt, '%Y-%m')
       ORDER BY month ASC
     `
+
+    const billingByGateway = await prisma.payment.groupBy({
+      by: ['method'],
+      where: { status: 'PAID', createdAt: { gte: month } },
+      _sum: { amount: true },
+      _count: { id: true },
+    })
+
+    const recentInvoices = await prisma.invoice.findMany({
+      take: 8,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        subscription: {
+          include: {
+            company: { select: { name: true } },
+            plan: { select: { name: true } },
+          },
+        },
+        payments: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { method: true },
+        },
+      },
+    })
 
     // Top categories by product count
     const topCategories = await prisma.category.findMany({
@@ -125,11 +154,35 @@ export async function GET(req: NextRequest) {
         openInsuranceClaims,
         openFinancingRequests,
         commissionRevenue: Number(commissionRevenue._sum.amount || 0),
+        paidInvoicesMonth,
+        pendingManualPayments,
       },
       charts: {
-        userGrowth,
-        revenueTrend,
+        userGrowth: userGrowth.map((item) => ({
+          date: item.date instanceof Date ? item.date.toISOString() : String(item.date),
+          count: Number(item.count || 0),
+        })),
+        revenueTrend: revenueTrend.map((item) => ({
+          month: item.month,
+          revenue: Number(item.revenue || 0),
+        })),
+        billingByGateway: billingByGateway.map((item) => ({
+          method: item.method,
+          amount: Number(item._sum.amount || 0),
+          count: item._count.id,
+        })),
         topCategories,
+        recentInvoices: recentInvoices.map((invoice) => ({
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          total: Number(invoice.total),
+          currency: invoice.currency,
+          status: invoice.status,
+          createdAt: invoice.createdAt,
+          companyName: invoice.subscription.company.name,
+          planName: invoice.subscription.plan.name,
+          method: invoice.payments[0]?.method || 'N/A',
+        })),
       },
     })
   } catch (error) {

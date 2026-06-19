@@ -10,6 +10,7 @@ import {
   Search, CheckCircle, Clock, XCircle, AlertCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { LoadingButton } from '@/components/ui/loading-button'
 
 interface Product {
   id: string; name: string; slug: string; status: string
@@ -188,13 +189,14 @@ export default function DashboardProductsPage() {
               <button onClick={() => setDeleteId(null)} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50">
                 Cancel
               </button>
-              <button
+              <LoadingButton
                 onClick={() => deleteMutation.mutate(deleteId)}
-                disabled={deleteMutation.isPending}
+                loading={deleteMutation.isPending}
+                loadingText="Deleting..."
                 className="flex-1 bg-red-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Delete
-              </button>
+                Delete
+              </LoadingButton>
             </div>
           </div>
         </div>

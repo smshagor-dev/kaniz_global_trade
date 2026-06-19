@@ -215,3 +215,37 @@ export async function sendSubscriptionExpiryEmail(
     `),
   })
 }
+
+interface InvoicePaidEmailOptions {
+  to: string
+  customerName: string
+  companyName: string
+  invoiceNumber: string
+  amount: number
+  currency: string
+  planName: string
+  paymentMethod: string
+  paidAt: Date
+  dashboardUrl?: string
+}
+
+export async function sendInvoicePaidEmail(options: InvoicePaidEmailOptions): Promise<void> {
+  const dashboardUrl = options.dashboardUrl || `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`
+
+  await sendEmail({
+    to: options.to,
+    subject: `Invoice Paid: ${options.invoiceNumber}`,
+    html: emailLayout(`
+      <h2>Invoice Payment Confirmed</h2>
+      <p>Hi ${options.customerName},</p>
+      <p>We received your payment for <strong>${options.companyName}</strong>.</p>
+      <div class="alert">
+        <p style="margin:0 0 8px;"><strong>Invoice:</strong> ${options.invoiceNumber}</p>
+        <p style="margin:0 0 8px;"><strong>Plan:</strong> ${options.planName}</p>
+        <p style="margin:0 0 8px;"><strong>Amount:</strong> ${options.currency} ${options.amount.toLocaleString()}</p>
+        <p style="margin:0;"><strong>Method:</strong> ${options.paymentMethod} on ${options.paidAt.toLocaleDateString()}</p>
+      </div>
+      <a href="${dashboardUrl}" class="btn">View Billing Dashboard</a>
+    `),
+  })
+}

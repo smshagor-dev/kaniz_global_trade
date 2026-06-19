@@ -37,6 +37,8 @@ const navGroups = [
   {
     label: 'Marketplace',
     items: [
+      { href: '/admin/categories',   icon: Globe,           label: 'Categories' },
+      { href: '/admin/catalogs',     icon: Package,         label: 'Catalogs' },
       { href: '/admin/companies',    icon: Building2,       label: 'Companies' },
       { href: '/admin/inspections',  icon: ClipboardCheck,  label: 'Inspection Reports' },
       { href: '/admin/products',     icon: Package,         label: 'Product Approval' },
@@ -48,6 +50,7 @@ const navGroups = [
     items: [
       { href: '/admin/trade-orders',   icon: Shield,        label: 'Trade Orders' },
       { href: '/admin/commissions',    icon: Shield,        label: 'Commissions' },
+      { href: '/admin/payments',       icon: Shield,        label: 'Payments' },
       { href: '/admin/sample-orders',  icon: Package,       label: 'Sample Orders' },
       { href: '/admin/shipments',      icon: Globe,         label: 'Shipments' },
       { href: '/admin/logistics-bookings', icon: Globe,     label: 'Logistics' },

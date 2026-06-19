@@ -76,7 +76,7 @@ A production-ready, full-stack B2B export/import marketplace platform similar to
 - 🔔 Real-time notifications
 - 🔍 Full-text search (Meilisearch)
 - 📁 File uploads (S3/R2 with image optimization)
-- 💳 Stripe + PayPal + Manual bank transfer
+- 💳 Stripe + SSLCommerz + aamarPay (Bangladesh) + NOWPayments + PayPal + Manual bank transfer
 - 📧 Email templates (SMTP/Mailgun/SendGrid)
 - 📊 Company & product analytics
 - 🛡️ RBAC permission system
@@ -100,7 +100,7 @@ A production-ready, full-stack B2B export/import marketplace platform similar to
 | Search       | Meilisearch 1.x                                |
 | Storage      | Cloudflare R2 / AWS S3 + Sharp                |
 | Auth         | JWT + Argon2 + TOTP (2FA)                     |
-| Payments     | Stripe + PayPal                                |
+| Payments     | Stripe + SSLCommerz + aamarPay + NOWPayments + PayPal |
 | Email        | Nodemailer (SMTP / Gmail OAuth)               |
 | Queues       | BullMQ                                         |
 | Deployment   | Docker + Docker Compose + Nginx               |
@@ -181,12 +181,26 @@ S3_ACCESS_KEY="..."
 S3_SECRET_KEY="..."
 STRIPE_SECRET_KEY="sk_..."
 STRIPE_WEBHOOK_SECRET="whsec_..."
+SSLCOMMERZ_STORE_ID="your_store_id"
+SSLCOMMERZ_STORE_PASSWORD="your_store_password"
+SSLCOMMERZ_SANDBOX_MODE="true"
+AAMARPAY_STORE_ID="your_aamarpay_store_id"
+AAMARPAY_SIGNATURE_KEY="your_aamarpay_signature_key"
+AAMARPAY_SANDBOX_MODE="true"
+NOWPAYMENTS_API_KEY="your_nowpayments_api_key"
+NOWPAYMENTS_IPN_SECRET="your_nowpayments_ipn_secret"
+NOWPAYMENTS_SANDBOX_MODE="true"
 MEILISEARCH_HOST="http://localhost:7700"
 MEILISEARCH_API_KEY="masterKey"
 SMTP_HOST="smtp.gmail.com"
 SMTP_USER="..."
 SMTP_PASS="..."
 ```
+
+Payment notes:
+- `NEXT_PUBLIC_APP_URL` should use your real app domain so gateway return URLs work correctly.
+- NOWPayments IPN callback endpoint: `/api/payments/nowpayments/callback`
+- SSLCommerz and aamarPay callbacks are also handled through the app API routes.
 
 ---
 

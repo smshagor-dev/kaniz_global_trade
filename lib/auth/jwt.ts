@@ -6,6 +6,8 @@ const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!
 const ACCESS_EXPIRES = process.env.JWT_ACCESS_EXPIRES || '15m'
 const REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES || '7d'
+const REFRESH_REMEMBER_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_REMEMBER_DAYS || '30')
+const REFRESH_SESSION_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_SESSION_DAYS || '1')
 
 export interface JWTPayload {
   userId: string
@@ -19,11 +21,17 @@ export interface TokenPair {
 }
 
 export function signAccessToken(payload: JWTPayload): string {
-  return jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES } as jwt.SignOptions)
+  return jwt.sign(payload, ACCESS_SECRET, {
+    expiresIn: ACCESS_EXPIRES,
+    jwtid: uuidv4(),
+  } as jwt.SignOptions)
 }
 
 export function signRefreshToken(payload: JWTPayload): string {
-  return jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES } as jwt.SignOptions)
+  return jwt.sign(payload, REFRESH_SECRET, {
+    expiresIn: REFRESH_EXPIRES,
+    jwtid: uuidv4(),
+  } as jwt.SignOptions)
 }
 
 export function verifyAccessToken(token: string): JWTPayload {
@@ -37,13 +45,16 @@ export function verifyRefreshToken(token: string): JWTPayload {
 export async function generateTokenPair(
   payload: JWTPayload,
   ipAddress?: string,
-  userAgent?: string
+  userAgent?: string,
+  options?: { rememberMe?: boolean }
 ): Promise<TokenPair> {
   const accessToken = signAccessToken(payload)
-  const refreshToken = signRefreshToken(payload)
+  const refreshToken = generateSecureToken()
 
   const expiresAt = new Date()
-  expiresAt.setDate(expiresAt.getDate() + 7)
+  expiresAt.setDate(
+    expiresAt.getDate() + (options?.rememberMe ? REFRESH_REMEMBER_EXPIRES_DAYS : REFRESH_SESSION_EXPIRES_DAYS)
+  )
 
   await prisma.refreshToken.create({
     data: {
@@ -61,7 +72,8 @@ export async function generateTokenPair(
 export async function rotateRefreshToken(
   oldToken: string,
   ipAddress?: string,
-  userAgent?: string
+  userAgent?: string,
+  options?: { rememberMe?: boolean }
 ): Promise<TokenPair> {
   const existing = await prisma.refreshToken.findUnique({
     where: { token: oldToken },
@@ -83,7 +95,7 @@ export async function rotateRefreshToken(
     roles,
   }
 
-  return generateTokenPair(payload, ipAddress, userAgent)
+  return generateTokenPair(payload, ipAddress, userAgent, options)
 }
 
 export async function revokeRefreshToken(token: string): Promise<void> {

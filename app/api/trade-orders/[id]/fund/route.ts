@@ -5,9 +5,12 @@ import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
 import { createNotification } from '@/server/services/notification'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { createOneTimeCheckoutSession, createStripeCustomer } from '@/lib/payment/stripe'
+import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
+import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
+import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
 
 const fundSchema = z.object({
-  method: z.enum(['STRIPE', 'PAYPAL', 'BANK_TRANSFER', 'MANUAL']).default('MANUAL'),
+  method: z.enum(['STRIPE', 'SSLCOMMERZ', 'AAMARPAY', 'NOWPAYMENTS', 'PAYPAL', 'BANK_TRANSFER', 'MANUAL']).default('MANUAL'),
   transactionId: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
 })
@@ -88,6 +91,161 @@ export async function POST(
       })
 
       return successResponse({ checkoutUrl: checkout.url }, 'Stripe checkout session created')
+    }
+
+    if (data.method === 'SSLCOMMERZ') {
+      const transactionId = data.transactionId || generateSSLCommerzTransactionId('KGTTO')
+      const payment = await prisma.payment.create({
+        data: {
+          userId: authUser.userId,
+          tradeOrderId: order.id,
+          amount: order.totalAmount,
+          currency: order.currencyCode,
+          method: 'SSLCOMMERZ',
+          status: 'PENDING',
+          transactionId,
+          metadata: JSON.stringify({
+            ...(data.metadata || {}),
+            kind: 'TRADE_ORDER',
+            tradeOrderId: order.id,
+            buyerId: authUser.userId,
+            supplierCompanyId: order.supplierCompanyId,
+            captureStatus: 'checkout_created',
+          }),
+        },
+      })
+
+      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/sslcommerz/callback`
+      const checkout = await createSSLCommerzSession({
+        amount: Number(order.totalAmount),
+        currency: order.currencyCode,
+        transactionId,
+        productName: `Trade Assurance: ${order.productName}`,
+        productCategory: 'trade-order',
+        successUrl: callbackUrl,
+        failUrl: callbackUrl,
+        cancelUrl: callbackUrl,
+        ipnUrl: callbackUrl,
+        customer: {
+          name: `${buyer.firstName} ${buyer.lastName}`.trim(),
+          email: buyer.email,
+          phone: buyer.phone || undefined,
+          address1: order.shippingAddress || 'Dhaka, Bangladesh',
+        },
+        shipping: {
+          method: 'Courier',
+          name: `${buyer.firstName} ${buyer.lastName}`.trim(),
+          address1: order.shippingAddress || 'Dhaka, Bangladesh',
+          numOfItems: Number(order.quantity) || 1,
+        },
+        valueA: payment.id,
+        valueB: order.id,
+        valueC: 'TRADE_ORDER',
+        valueD: authUser.userId,
+      })
+
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          metadata: JSON.stringify({
+            ...(data.metadata || {}),
+            kind: 'TRADE_ORDER',
+            tradeOrderId: order.id,
+            buyerId: authUser.userId,
+            supplierCompanyId: order.supplierCompanyId,
+            captureStatus: 'checkout_created',
+            sessionKey: checkout.sessionKey,
+          }),
+        },
+      })
+
+      return successResponse({ checkoutUrl: checkout.url }, 'SSLCommerz checkout session created')
+    }
+
+    if (data.method === 'AAMARPAY') {
+      const transactionId = data.transactionId || generateAamarPayTransactionId('KGTTO')
+      await prisma.payment.create({
+        data: {
+          userId: authUser.userId,
+          tradeOrderId: order.id,
+          amount: order.totalAmount,
+          currency: order.currencyCode,
+          method: 'AAMARPAY',
+          status: 'PENDING',
+          transactionId,
+          metadata: JSON.stringify({
+            ...(data.metadata || {}),
+            kind: 'TRADE_ORDER',
+            tradeOrderId: order.id,
+            buyerId: authUser.userId,
+            supplierCompanyId: order.supplierCompanyId,
+            captureStatus: 'checkout_created',
+          }),
+        },
+      })
+
+      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/aamarpay/callback`
+      const checkout = await createAamarPaySession({
+        amount: Number(order.totalAmount),
+        currency: order.currencyCode,
+        transactionId,
+        description: `Trade assurance funding for ${order.productName}`,
+        successUrl: callbackUrl,
+        failUrl: callbackUrl,
+        cancelUrl: callbackUrl,
+        customer: {
+          name: `${buyer.firstName} ${buyer.lastName}`.trim(),
+          email: buyer.email,
+          phone: buyer.phone || '01700000000',
+          address1: order.shippingAddress || 'Dhaka, Bangladesh',
+          city: 'Dhaka',
+          state: 'Dhaka',
+          postcode: '1000',
+          country: 'Bangladesh',
+        },
+        optA: order.id,
+        optB: 'TRADE_ORDER',
+        optC: authUser.userId,
+        optD: order.supplierCompanyId,
+      })
+
+      return successResponse({ checkoutUrl: checkout.url }, 'aamarPay checkout session created')
+    }
+
+    if (data.method === 'NOWPAYMENTS') {
+      const transactionId = data.transactionId || generateNOWPaymentsOrderId('KGTTO')
+      await prisma.payment.create({
+        data: {
+          userId: authUser.userId,
+          tradeOrderId: order.id,
+          amount: order.totalAmount,
+          currency: order.currencyCode,
+          method: 'NOWPAYMENTS',
+          status: 'PENDING',
+          transactionId,
+          metadata: JSON.stringify({
+            ...(data.metadata || {}),
+            kind: 'TRADE_ORDER',
+            tradeOrderId: order.id,
+            buyerId: authUser.userId,
+            supplierCompanyId: order.supplierCompanyId,
+            captureStatus: 'invoice_created',
+          }),
+        },
+      })
+
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      const checkout = await createNOWPaymentsInvoice({
+        amount: Number(order.totalAmount),
+        currency: order.currencyCode,
+        orderId: transactionId,
+        description: `Trade assurance funding for ${order.productName}`,
+        successUrl: `${baseUrl}/buyer/trade-orders?payment=success`,
+        cancelUrl: `${baseUrl}/buyer/trade-orders?payment=cancelled`,
+        ipnCallbackUrl: `${baseUrl}/api/payments/nowpayments/callback`,
+      })
+
+      return successResponse({ checkoutUrl: checkout.url }, 'NOWPayments invoice created')
     }
 
     const updated = await prisma.$transaction(async (tx) => {

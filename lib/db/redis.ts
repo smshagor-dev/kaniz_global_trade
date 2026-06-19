@@ -80,7 +80,14 @@ export async function checkRateLimit(
     pipe.expire(redisKey, windowSeconds)
 
     const results = await pipe.exec()
-    const count = results?.[2]?.[1] as number
+    if (!results || results.some(([error]) => error)) {
+      throw new Error('Redis rate limit pipeline failed')
+    }
+
+    const count = results[2]?.[1]
+    if (typeof count !== 'number') {
+      throw new Error('Redis rate limit count was not numeric')
+    }
 
     return {
       allowed: count <= maxRequests,
@@ -93,6 +100,14 @@ export async function checkRateLimit(
       remaining: maxRequests,
       resetAt: now + windowSeconds * 1000,
     }
+  }
+}
+
+export async function resetRateLimit(key: string): Promise<void> {
+  try {
+    await redis.del(`ratelimit:${key}`)
+  } catch {
+    // Redis is optional in local development.
   }
 }
 

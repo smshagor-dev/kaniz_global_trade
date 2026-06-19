@@ -11,6 +11,7 @@ import { Package, Upload, Plus, Trash2, Loader2, ArrowLeft, Save } from 'lucide-
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import api from '@/lib/utils/api-client'
+import { LoadingButton } from '@/components/ui/loading-button'
 
 const schema = z.object({
   name:             z.string().min(3, 'Name must be at least 3 characters').max(500),
@@ -323,14 +324,15 @@ export default function NewProductPage() {
           <Link href="/dashboard/products" className="flex-1 text-center border border-gray-200 rounded-xl py-3 text-sm font-medium hover:bg-gray-50 transition-colors">
             Cancel
           </Link>
-          <button
+          <LoadingButton
             type="submit"
-            disabled={isSubmitting}
+            loading={isSubmitting}
+            loadingText="Submitting..."
+            icon={<Save className="w-4 h-4" />}
             className="flex-1 bg-blue-700 text-white rounded-xl py-3 text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Submit for Approval
-          </button>
+          </LoadingButton>
         </div>
       </form>
     </div>

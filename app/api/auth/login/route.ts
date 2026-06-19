@@ -4,25 +4,27 @@ import prisma from '@/lib/db/prisma'
 import { hashPassword, needsPasswordRehash, verifyPassword } from '@/lib/auth/password'
 import { generateTokenPair } from '@/lib/auth/jwt'
 import { successResponse, errorResponse, handleApiError } from '@/lib/utils/api'
-import { checkRateLimit } from '@/lib/db/redis'
+import { checkRateLimit, resetRateLimit } from '@/lib/db/redis'
 import { logLogin } from '@/lib/utils/audit'
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   twoFactorCode: z.string().optional(),
+  rememberMe: z.boolean().optional().default(true),
 })
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') || 'unknown'
+    const forwardedFor = req.headers.get('x-forwarded-for')
+    const ip = forwardedFor?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
     const ua = req.headers.get('user-agent') || ''
-
-    const { allowed } = await checkRateLimit(`login:${ip}`, 10, 900)
-    if (!allowed) return errorResponse('Too many login attempts. Try again in 15 minutes.', 429)
-
     const body = await req.json()
     const data = loginSchema.parse(body)
+    const loginRateLimitKey = `login:${ip}:${data.email.toLowerCase()}`
+
+    const { allowed } = await checkRateLimit(loginRateLimitKey, 10, 900)
+    if (!allowed) return errorResponse('Too many login attempts. Try again in 15 minutes.', 429)
 
     const user = await prisma.user.findUnique({
       where: { email: data.email, deletedAt: null },
@@ -75,7 +77,8 @@ export async function POST(req: NextRequest) {
     const { accessToken, refreshToken } = await generateTokenPair(
       { userId: user.id, email: user.email, roles },
       ip,
-      ua
+      ua,
+      { rememberMe: data.rememberMe }
     )
 
     // Update last login
@@ -89,6 +92,7 @@ export async function POST(req: NextRequest) {
     })
 
     await logLogin(user.id, ip, ua)
+    await resetRateLimit(loginRateLimitKey)
 
     return successResponse({
       accessToken,

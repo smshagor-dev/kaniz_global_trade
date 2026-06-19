@@ -3,9 +3,14 @@ import { getSettingsMap } from '@/lib/settings/system'
 
 async function getStripeClient() {
   const settings = await getSettingsMap([
+    'STRIPE_ENABLED',
     'STRIPE_SECRET_KEY',
     'STRIPE_WEBHOOK_SECRET',
   ])
+
+  if (settings.STRIPE_ENABLED === 'false') {
+    throw new Error('Stripe is currently disabled')
+  }
 
   return {
     stripe: new Stripe(settings.STRIPE_SECRET_KEY, {

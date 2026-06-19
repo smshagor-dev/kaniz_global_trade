@@ -23,16 +23,19 @@ interface AdminStats {
     pendingBuyerVerifications: number; pendingKyc: number; openFraudAlerts: number
     inspectionReports: number; tradeOrders: number; sampleOrders: number; activeShipments: number
     openInsuranceClaims: number; openFinancingRequests: number; commissionRevenue: number
+    paidInvoicesMonth: number; pendingManualPayments: number
   }
   charts: {
     userGrowth:   { date: string; count: number }[]
     revenueTrend: { month: string; revenue: number }[]
+    billingByGateway: { method: string; amount: number; count: number }[]
     topCategories: { id: string; name: string; _count: { products: number } }[]
+    recentInvoices: { id: string; invoiceNumber: string; total: number; currency: string; status: string; createdAt: string; companyName: string; planName: string; method: string }[]
   }
 }
 
 export default function AdminDashboardPage() {
-  const { data } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['admin-stats'],
     queryFn:  () => get<AdminStats>('/admin/stats'),
     refetchInterval: 60000,
@@ -49,6 +52,7 @@ export default function AdminDashboardPage() {
     { label: 'Inspections',       value: stats.overview.inspectionReports.toLocaleString(), icon: Shield,     color: 'purple', href: '/admin/inspections', change: `${stats.overview.activeShipments} active shipments` },
     { label: 'Buyer Verification', value: stats.overview.pendingBuyerVerifications.toLocaleString(), icon: CreditCard, color: 'emerald', href: '/admin/buyer-verifications', change: 'Awaiting review' },
     { label: 'Commission Revenue', value: `$${stats.overview.commissionRevenue.toLocaleString()}`, icon: TrendingUp, color: 'teal', href: '/admin/commissions', change: `${stats.overview.openFinancingRequests} financing requests` },
+    { label: 'Paid Invoices', value: stats.overview.paidInvoicesMonth.toLocaleString(), icon: CreditCard, color: 'blue', href: '/admin/payments', change: `${stats.overview.pendingManualPayments} manual pending` },
     ] : []
 
   const colorMap: Record<string, string> = {
@@ -68,6 +72,7 @@ export default function AdminDashboardPage() {
     { label: 'KYC submissions to review',  value: stats.overview.pendingKyc,          href: '/admin/kyc',                        icon: Shield,         color: 'blue' },
     { label: 'Fraud alerts to review',     value: stats.overview.openFraudAlerts,     href: '/admin/fraud-alerts',               icon: Flag,           color: 'red' },
     { label: 'Insurance claims to review', value: stats.overview.openInsuranceClaims, href: '/admin/insurance-claims',          icon: Shield,         color: 'purple' },
+    { label: 'Manual payments to review', value: stats.overview.pendingManualPayments, href: '/admin/payments', icon: CreditCard, color: 'blue' },
   ] : []
 
   return (
@@ -77,8 +82,48 @@ export default function AdminDashboardPage() {
         <p className="text-sm text-gray-500 mt-1">Platform overview and management</p>
       </div>
 
+      {isLoading && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="bg-white border border-gray-100 rounded-xl p-5 animate-pulse">
+                <div className="w-9 h-9 rounded-lg bg-gray-100 mb-3" />
+                <div className="h-8 w-20 bg-gray-100 rounded mb-2" />
+                <div className="h-4 w-28 bg-gray-100 rounded" />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 h-72 animate-pulse" />
+            <div className="bg-white border border-gray-100 rounded-xl p-6 h-72 animate-pulse" />
+          </div>
+        </div>
+      )}
+
+      {!isLoading && error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+          <h2 className="text-base font-semibold text-red-800">Dashboard data failed to load</h2>
+          <p className="text-sm text-red-700 mt-1">
+            {(error as Error)?.message || 'The admin stats request returned an error.'}
+          </p>
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="mt-4 inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {isFetching ? 'Retrying...' : 'Retry'}
+          </button>
+        </div>
+      )}
+
+      {!isLoading && !error && !stats && (
+        <div className="bg-white border border-gray-100 rounded-xl p-6 text-sm text-gray-500">
+          No admin stats are available yet.
+        </div>
+      )}
+
       {/* Urgent actions */}
-      {urgentActions.some((a) => a.value > 0) && (
+      {!!stats && urgentActions.some((a) => a.value > 0) && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <p className="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" /> Action Required
@@ -100,7 +145,7 @@ export default function AdminDashboardPage() {
       )}
 
       {/* Metric cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {!!stats && <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {metricCards.map(({ label, value, icon: Icon, color, href, change }) => (
           <Link
             key={label}
@@ -118,10 +163,10 @@ export default function AdminDashboardPage() {
             <p className="text-xs text-gray-400 mt-1">{change}</p>
           </Link>
         ))}
-      </div>
+      </div>}
 
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {!!stats && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* User growth */}
         {stats?.charts.userGrowth && (
           <div className="bg-white border border-gray-100 rounded-xl p-6">
@@ -153,10 +198,49 @@ export default function AdminDashboardPage() {
             </ResponsiveContainer>
           </div>
         )}
-      </div>
+      </div>}
+
+      {!!stats && stats?.charts.billingByGateway && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white border border-gray-100 rounded-xl p-6">
+            <h3 className="font-bold text-gray-900 mb-4">Billing by Gateway (This Month)</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={stats.charts.billingByGateway}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="method" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} />
+                <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, 'Amount']} />
+                <Bar dataKey="amount" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="bg-white border border-gray-100 rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-900">Recent Billing Activity</h3>
+              <Link href="/admin/payments" className="text-sm text-blue-700 hover:underline">Review payments</Link>
+            </div>
+            <div className="space-y-3">
+              {stats.charts.recentInvoices.map((invoice) => (
+                <div key={invoice.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{invoice.invoiceNumber}</p>
+                    <p className="text-xs text-gray-500 mt-1">{invoice.companyName} | {invoice.planName} | {invoice.method}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-gray-900">{invoice.currency} {invoice.total.toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 mt-1">{new Date(invoice.createdAt).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              ))}
+              {stats.charts.recentInvoices.length === 0 && <p className="text-sm text-gray-500">No recent invoices found.</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top categories */}
-      {stats?.charts.topCategories && (
+      {!!stats && stats?.charts.topCategories && (
         <div className="bg-white border border-gray-100 rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">Top Categories by Products</h3>
