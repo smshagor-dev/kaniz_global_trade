@@ -1,11 +1,12 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { useQuery } from '@tanstack/react-query'
 import { post } from '@/lib/utils/api-client'
 import { useAuthStore } from '@/store/auth'
 import { Globe2, Eye, EyeOff } from 'lucide-react'
@@ -20,6 +21,11 @@ const schema = z.object({
 })
 type FormData = z.infer<typeof schema>
 
+interface SocialProvidersResponse {
+  google: { enabled: boolean }
+  facebook: { enabled: boolean }
+}
+
 function LoginPageContent() {
   const router      = useRouter()
   const params      = useSearchParams()
@@ -33,6 +39,30 @@ function LoginPageContent() {
       rememberMe: savedRememberMe,
     },
   })
+  const { data: socialProviders } = useQuery({
+    queryKey: ['social-providers'],
+    queryFn: async () => {
+      const response = await fetch('/api/auth/social-providers', { cache: 'no-store' })
+      if (!response.ok) throw new Error('Failed to load social providers')
+      return response.json() as Promise<{ data?: SocialProvidersResponse }>
+    },
+  })
+
+  const redirect = params.get('redirect')
+  const socialUrl = useMemo(
+    () => ({
+      google: `/api/auth/oauth/google${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`,
+      facebook: `/api/auth/oauth/facebook${redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''}`,
+    }),
+    [redirect]
+  )
+
+  useEffect(() => {
+    const socialError = params.get('error')
+    if (socialError) {
+      toast.error(socialError)
+    }
+  }, [params])
 
   async function onSubmit(data: FormData) {
     try {
@@ -53,7 +83,6 @@ function LoginPageContent() {
 
       toast.success(`Welcome back, ${user!.firstName}!`)
 
-      const redirect = params.get('redirect')
       if (redirect) { router.push(redirect); return }
 
       const roles = user!.roles
@@ -81,6 +110,35 @@ function LoginPageContent() {
 
         <div className="p-8">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {(socialProviders?.data?.google?.enabled || socialProviders?.data?.facebook?.enabled) ? (
+              <div className="space-y-3">
+                {socialProviders?.data?.google?.enabled ? (
+                  <a
+                    href={socialUrl.google}
+                    className="flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                  >
+                    Continue with Google
+                  </a>
+                ) : null}
+                {socialProviders?.data?.facebook?.enabled ? (
+                  <a
+                    href={socialUrl.facebook}
+                    className="flex w-full items-center justify-center rounded-xl border border-[#1877F2] bg-[#1877F2] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#166fe5]"
+                  >
+                    Continue with Facebook
+                  </a>
+                ) : null}
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase tracking-[0.2em] text-gray-400">
+                    <span className="bg-white px-3">Or</span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
               <input

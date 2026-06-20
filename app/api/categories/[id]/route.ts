@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAdmin, ApiError } from '@/lib/permissions'
+import { requireAuth, ApiError, isAdmin, isSupplier } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { slugify } from '@/lib/utils/slug'
 
@@ -16,6 +16,8 @@ const updateCategorySchema = z.object({
   seoTitle: z.string().optional().nullable(),
   seoDesc: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
+  approvalStatus: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(),
+  rejectedReason: z.string().optional().nullable(),
 })
 
 export async function PUT(
@@ -23,13 +25,22 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin(req)
+    const authUser = await requireAuth(req)
     const { id } = await params
     const body = await req.json()
     const data = updateCategorySchema.parse(body)
+    const userIsAdmin = isAdmin(authUser)
+    const userIsSupplier = isSupplier(authUser)
 
     const category = await prisma.category.findUnique({ where: { id } })
     if (!category) throw new ApiError(404, 'Category not found')
+    if (!userIsAdmin && !userIsSupplier) throw new ApiError(403, 'Access denied')
+    if (!userIsAdmin && category.source === 'ADMIN') {
+      throw new ApiError(403, 'Supplier cannot edit admin-created categories')
+    }
+    if (!userIsAdmin && category.createdById !== authUser.userId) {
+      throw new ApiError(403, 'You can only edit your own categories')
+    }
 
     const slug = data.slug ? slugify(data.slug) : slugify(data.name)
 
@@ -45,13 +56,28 @@ export async function PUT(
     const updated = await prisma.category.update({
       where: { id },
       data: {
-        ...data,
         slug,
+        name: data.name,
+        description: data.description,
+        icon: data.icon,
+        image: data.image,
         parentId: data.parentId || null,
+        sortOrder: data.sortOrder,
+        seoTitle: data.seoTitle,
+        seoDesc: data.seoDesc,
+        isActive: data.isActive,
+        approvalStatus: userIsAdmin ? data.approvalStatus || category.approvalStatus : 'PENDING',
+        rejectedReason: userIsAdmin
+          ? data.approvalStatus === 'REJECTED'
+            ? data.rejectedReason || null
+            : null
+          : null,
+        approvedById: userIsAdmin && data.approvalStatus === 'APPROVED' ? authUser.userId : null,
+        approvedAt: userIsAdmin && data.approvalStatus === 'APPROVED' ? new Date() : null,
       },
     })
 
-    return successResponse(updated, 'Category updated')
+    return successResponse(updated, userIsAdmin ? 'Category updated' : 'Category resubmitted for approval')
   } catch (error) {
     return handleApiError(error)
   }
@@ -62,7 +88,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin(req)
+    const authUser = await requireAuth(req)
+    if (!isAdmin(authUser)) throw new ApiError(403, 'Admin access required')
     const { id } = await params
 
     const category = await prisma.category.findUnique({

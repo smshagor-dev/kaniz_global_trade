@@ -10,11 +10,11 @@ interface Props {
 export default async function CategoryPage({ params }: Props) {
   const { slug } = await params
 
-  const category = await prisma.category.findUnique({
-    where: { slug },
+  const category = await prisma.category.findFirst({
+    where: { slug, approvalStatus: 'APPROVED' },
     include: {
       subcategories: {
-        where: { isActive: true },
+        where: { isActive: true, approvalStatus: 'APPROVED' },
         orderBy: { name: 'asc' },
       },
     },
@@ -27,6 +27,7 @@ export default async function CategoryPage({ params }: Props) {
       categoryId: category.id,
       status: 'APPROVED',
       deletedAt: null,
+      OR: [{ subcategoryId: null }, { subcategory: { approvalStatus: 'APPROVED', isActive: true } }],
     },
     take: 16,
     orderBy: [{ isFeatured: 'desc' }, { totalViews: 'desc' }, { createdAt: 'desc' }],
@@ -47,7 +48,7 @@ export default async function CategoryPage({ params }: Props) {
   })
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       <div className="rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm">
         <p className="text-sm font-bold uppercase tracking-[0.16em] text-blue-700">Category</p>
         <h1 className="mt-2 text-3xl font-black tracking-[-0.03em] text-gray-950">{category.name}</h1>

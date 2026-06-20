@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { get } from '@/lib/utils/api-client'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth'
+import { CurrencyAmount } from '@/components/currency/currency-amount'
 import {
   Area,
   AreaChart,
@@ -153,7 +154,7 @@ export default function DashboardOverviewPage() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <p className="text-xs text-slate-300">Recognized Comm.</p>
-              <p className="mt-2 text-2xl font-bold">${dashboard.commissionTotals.recognized.toLocaleString()}</p>
+              <p className="mt-2 text-2xl font-bold"><CurrencyAmount amount={dashboard.commissionTotals.recognized} currencyCode="USD" /></p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <p className="text-xs text-slate-300">Unread Alerts</p>
@@ -320,7 +321,7 @@ export default function DashboardOverviewPage() {
                     <p className="text-xs text-gray-500">{payment.method} | {new Date(payment.createdAt).toLocaleDateString()}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-gray-900">{payment.currency} {payment.amount.toLocaleString()}</p>
+                    <p className="text-sm font-bold text-gray-900"><CurrencyAmount amount={payment.amount} currencyCode={payment.currency} showCode /></p>
                     <p className="text-xs text-gray-500">{payment.status}</p>
                   </div>
                 </div>
@@ -362,7 +363,7 @@ export default function DashboardOverviewPage() {
                   <p className="truncate text-sm font-semibold text-gray-900">{order.productName}</p>
                   <p className="text-xs text-gray-500">{order.status} | {new Date(order.createdAt).toLocaleDateString()}</p>
                 </div>
-                <p className="text-sm font-bold text-gray-900">{order.currencyCode} {order.totalAmount.toLocaleString()}</p>
+                <p className="text-sm font-bold text-gray-900"><CurrencyAmount amount={order.totalAmount} currencyCode={order.currencyCode} showCode /></p>
               </Link>
             ))}
           </div>
@@ -383,7 +384,7 @@ export default function DashboardOverviewPage() {
                   <p className="truncate text-sm font-semibold text-gray-900">{order.title}</p>
                   <p className="text-xs text-gray-500">{order.status} | {new Date(order.createdAt).toLocaleDateString()}</p>
                 </div>
-                <p className="text-sm font-bold text-gray-900">{order.currencyCode} {order.totalAmount.toLocaleString()}</p>
+                <p className="text-sm font-bold text-gray-900"><CurrencyAmount amount={order.totalAmount} currencyCode={order.currencyCode} showCode /></p>
               </Link>
             ))}
           </div>

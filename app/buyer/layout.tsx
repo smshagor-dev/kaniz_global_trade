@@ -7,6 +7,7 @@ import { useIsAuthenticated, useIsBuyer, useIsAdmin, useCurrentUser, useAuthStor
 import { post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { CurrencySelector } from '@/components/currency/currency-selector'
 import {
   LayoutDashboard, MessageSquare, FileText, Quote,
   Heart, Star, Bell, Settings, LogOut, Globe2,
@@ -109,6 +110,7 @@ export default function BuyerDashboardLayout({ children }: { children: React.Rea
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher compact />
+            <CurrencySelector compact />
             <Link href="/products" className="flex items-center gap-1.5 text-sm text-blue-700 hover:underline">
               <Search className="w-4 h-4" /> Browse Products
             </Link>

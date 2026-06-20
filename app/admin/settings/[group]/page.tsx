@@ -3,8 +3,9 @@
 import { useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { del, get, put } from '@/lib/utils/api-client'
+import { del, get, post, put } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
+import { Loader2 } from 'lucide-react'
 
 interface SettingItem {
   key: string
@@ -21,6 +22,66 @@ interface SettingsResponse {
   items: SettingItem[]
 }
 
+interface CurrencySnapshotResponse {
+  enabled: boolean
+  baseCode: string
+  defaultDisplayCode: string
+  lastSyncedAt: string | null
+  currencies: Array<{
+    id: string
+    code: string
+    name: string
+    symbol: string
+    rate: number
+    isDefault: boolean
+    isActive: boolean
+    updatedAt: string
+  }>
+}
+
+interface LanguageAdminSnapshotResponse {
+  baseLanguage: string
+  totalKeys: number
+  languages: Array<{
+    id: string
+    code: string
+    name: string
+    nativeName?: string | null
+    isDefault: boolean
+    isActive: boolean
+    isRtl: boolean
+    autoTranslateReady: boolean
+    lastTranslatedAt: string | null
+    translationCount: number
+  }>
+}
+
+interface ServicePartnerRecord {
+  id: string
+  type: 'FINANCING' | 'INSURANCE'
+  code: string
+  name: string
+  slug: string
+  description?: string | null
+  website?: string | null
+  contactEmail?: string | null
+  apiBaseUrl?: string | null
+  apiKey: string
+  apiSecret: string
+  accessToken: string
+  metadata: string
+  isDefault: boolean
+  isActive: boolean
+  hasApiKey: boolean
+  hasApiSecret: boolean
+  hasAccessToken: boolean
+  requestCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+const CURRENCY_PAGE_SIZE = 15
+
 interface GatewayCardConfig {
   id: string
   title: string
@@ -34,6 +95,9 @@ interface GatewayCardConfig {
 
 const GROUP_MAP: Record<string, string> = {
   payment: 'PAYMENT',
+  currency: 'CURRENCY',
+  language: 'LANGUAGE',
+  social: 'SOCIAL',
   shipping: 'SHIPPING',
   partners: 'PARTNERS',
   email: 'EMAIL',
@@ -163,22 +227,33 @@ function SettingField({
   value,
   onChange,
   onReset,
+  resetting,
+  compact = false,
 }: {
   item: SettingItem
   value: string
   onChange: (value: string) => void
   onReset: () => Promise<void>
+  resetting?: boolean
+  compact?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
+    <div className={`rounded-xl border border-gray-100 bg-gray-50/70 ${compact ? 'p-3' : 'p-4'}`}>
+      <div className={`flex items-start justify-between gap-3 ${compact ? 'mb-2' : 'mb-3'}`}>
         <div>
-          <h3 className="font-medium text-gray-900">{item.label || item.key}</h3>
-          <p className="mt-1 text-xs text-gray-400">{item.key}</p>
-          {item.description && <p className="mt-1 text-sm text-gray-500">{item.description}</p>}
+          <h3 className={`${compact ? 'text-sm' : ''} font-medium text-gray-900`}>{item.label || item.key}</h3>
+          <p className="mt-1 text-[11px] text-gray-400">{item.key}</p>
+          {item.description && (
+            <p className={`mt-1 text-gray-500 ${compact ? 'line-clamp-2 text-xs' : 'text-sm'}`}>{item.description}</p>
+          )}
         </div>
-        <button onClick={onReset} className="text-xs text-red-600 hover:underline">
-          Reset
+        <button
+          onClick={() => void onReset()}
+          disabled={resetting}
+          className="inline-flex items-center gap-1 text-xs text-red-600 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {resetting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+          {resetting ? 'Resetting...' : 'Reset'}
         </button>
       </div>
 
@@ -196,7 +271,7 @@ function SettingField({
           type={item.isSecret || item.type === 'PASSWORD' ? 'password' : item.type === 'NUMBER' ? 'number' : 'text'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+          className={`w-full rounded-lg border border-gray-200 bg-white text-sm ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
         />
       )}
     </div>
@@ -213,9 +288,56 @@ export default function AdminSettingsGroupPage() {
     queryFn: () => get<SettingsResponse>(`/admin/settings?group=${group}`),
   })
 
+  const { data: currencySnapshot, refetch: refetchCurrencySnapshot } = useQuery({
+    queryKey: ['admin-currency-snapshot', group],
+    queryFn: () => get<CurrencySnapshotResponse>('/currencies'),
+    enabled: group === 'CURRENCY',
+  })
+
+  const { data: languageSnapshot, refetch: refetchLanguageSnapshot } = useQuery({
+    queryKey: ['admin-language-snapshot', group],
+    queryFn: () => get<LanguageAdminSnapshotResponse>('/admin/languages'),
+    enabled: group === 'LANGUAGE',
+  })
+  const { data: partnersSnapshot, refetch: refetchPartnersSnapshot } = useQuery({
+    queryKey: ['admin-partners-snapshot', group],
+    queryFn: () => get<ServicePartnerRecord[]>('/admin/partners'),
+    enabled: group === 'PARTNERS',
+  })
+
   const settings = useMemo(() => ((data?.data as SettingsResponse | undefined)?.items || []), [data?.data])
   const label = (data?.data as SettingsResponse | undefined)?.groupLabel || group
   const [values, setValues] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [resettingKey, setResettingKey] = useState<string | null>(null)
+  const [currencyPage, setCurrencyPage] = useState(1)
+  const [creatingLanguage, setCreatingLanguage] = useState(false)
+  const [translatingLanguageId, setTranslatingLanguageId] = useState<string | null>(null)
+  const [savingPartner, setSavingPartner] = useState(false)
+  const [deletingPartnerId, setDeletingPartnerId] = useState<string | null>(null)
+  const [languageForm, setLanguageForm] = useState({
+    code: '',
+    name: '',
+    nativeName: '',
+    isRtl: false,
+  })
+  const [partnerForm, setPartnerForm] = useState({
+    id: '',
+    type: 'FINANCING' as 'FINANCING' | 'INSURANCE',
+    code: '',
+    name: '',
+    description: '',
+    website: '',
+    contactEmail: '',
+    apiBaseUrl: '',
+    apiKey: '',
+    apiSecret: '',
+    accessToken: '',
+    metadata: '',
+    isDefault: false,
+    isActive: true,
+  })
 
   const mergedValues = settings.reduce<Record<string, string>>((acc, item) => {
     acc[item.key] = values[item.key] ?? item.value ?? ''
@@ -227,26 +349,157 @@ export default function AdminSettingsGroupPage() {
   }
 
   async function resetSetting(key: string) {
-    await del('/admin/settings', { key })
-    setValues((prev) => {
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
-    toast.success('Setting reset')
-    refetch()
+    setResettingKey(key)
+    try {
+      await del('/admin/settings', { key })
+      setValues((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+      toast.success('Setting reset')
+      refetch()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Setting reset failed'
+      toast.error(message)
+    } finally {
+      setResettingKey(null)
+    }
   }
 
   async function save() {
-    await put('/admin/settings', {
-      group,
-      values: settings.map((item) => ({
-        key: item.key,
-        value: mergedValues[item.key] ?? '',
-      })),
-    })
-    toast.success('Settings saved')
-    refetch()
+    setSaving(true)
+    try {
+      await put('/admin/settings', {
+        group,
+        values: settings.map((item) => ({
+          key: item.key,
+          value: mergedValues[item.key] ?? '',
+        })),
+      })
+      toast.success('Settings saved')
+      refetch()
+      if (group === 'CURRENCY') refetchCurrencySnapshot()
+      if (group === 'LANGUAGE') refetchLanguageSnapshot()
+      if (group === 'PARTNERS') refetchPartnersSnapshot()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Settings save failed'
+      toast.error(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function syncCurrencyRates() {
+    setSyncing(true)
+    try {
+      await post('/admin/currencies/sync')
+      toast.success('Currency rates synced')
+      refetch()
+      refetchCurrencySnapshot()
+      setCurrencyPage(1)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Currency sync failed'
+      toast.error(message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function createLanguageRecord() {
+    setCreatingLanguage(true)
+    try {
+      await post('/admin/languages', {
+        code: languageForm.code,
+        name: languageForm.name,
+        nativeName: languageForm.nativeName,
+        isRtl: languageForm.isRtl,
+      })
+      toast.success('Language added')
+      setLanguageForm({ code: '', name: '', nativeName: '', isRtl: false })
+      refetchLanguageSnapshot()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Language create failed'
+      toast.error(message)
+    } finally {
+      setCreatingLanguage(false)
+    }
+  }
+
+  async function translateSingleLanguage(languageId: string) {
+    setTranslatingLanguageId(languageId)
+    try {
+      await post(`/admin/languages/${languageId}/translate`)
+      toast.success('Language translated')
+      refetchLanguageSnapshot()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Language translate failed'
+      toast.error(message)
+    } finally {
+      setTranslatingLanguageId(null)
+    }
+  }
+
+  async function savePartnerRecord() {
+    setSavingPartner(true)
+    try {
+      await post('/admin/partners', partnerForm)
+      toast.success(partnerForm.id ? 'Partner updated' : 'Partner created')
+      setPartnerForm({
+        id: '',
+        type: 'FINANCING',
+        code: '',
+        name: '',
+        description: '',
+        website: '',
+        contactEmail: '',
+        apiBaseUrl: '',
+        apiKey: '',
+        apiSecret: '',
+        accessToken: '',
+        metadata: '',
+        isDefault: false,
+        isActive: true,
+      })
+      refetchPartnersSnapshot()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Partner save failed'
+      toast.error(message)
+    } finally {
+      setSavingPartner(false)
+    }
+  }
+
+  async function deletePartnerRecord(id: string) {
+    setDeletingPartnerId(id)
+    try {
+      await del('/admin/partners', { id })
+      toast.success('Partner removed')
+      if (partnerForm.id === id) {
+        setPartnerForm({
+          id: '',
+          type: 'FINANCING',
+          code: '',
+          name: '',
+          description: '',
+          website: '',
+          contactEmail: '',
+          apiBaseUrl: '',
+          apiKey: '',
+          apiSecret: '',
+          accessToken: '',
+          metadata: '',
+          isDefault: false,
+          isActive: true,
+        })
+      }
+      refetchPartnersSnapshot()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Partner delete failed'
+      toast.error(message)
+    } finally {
+      setDeletingPartnerId(null)
+    }
   }
 
   const paymentCards = useMemo(() => {
@@ -274,6 +527,20 @@ export default function AdminSettingsGroupPage() {
     return cards
   }, [group, settings])
 
+  const currencySnapshotData = currencySnapshot?.data as CurrencySnapshotResponse | undefined
+  const languageSnapshotData = languageSnapshot?.data as LanguageAdminSnapshotResponse | undefined
+  const partnersSnapshotData = (partnersSnapshot?.data as ServicePartnerRecord[] | undefined) || []
+  const isCurrencyGroup = group === 'CURRENCY'
+  const isLanguageGroup = group === 'LANGUAGE'
+  const isPartnersGroup = group === 'PARTNERS'
+  const allCurrencies = currencySnapshotData?.currencies || []
+  const totalCurrencyPages = Math.max(1, Math.ceil(allCurrencies.length / CURRENCY_PAGE_SIZE))
+  const normalizedCurrencyPage = Math.min(currencyPage, totalCurrencyPages)
+  const paginatedCurrencies = allCurrencies.slice(
+    (normalizedCurrencyPage - 1) * CURRENCY_PAGE_SIZE,
+    normalizedCurrencyPage * CURRENCY_PAGE_SIZE
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -282,12 +549,37 @@ export default function AdminSettingsGroupPage() {
           <p className="mt-1 text-sm text-gray-500">
             {group === 'PAYMENT'
               ? 'Keep each gateway isolated in its own card with quick enable, live/sandbox, and credential controls.'
-              : 'Manage database-backed runtime settings for this integration group.'}
+              : group === 'CURRENCY'
+                ? 'Manage the ExchangeRate-API key and sync controls, then review the live currency rows saved in the database.'
+                : group === 'LANGUAGE'
+                  ? 'Add languages, store every translation key in the database, and run one-click Google translation per language.'
+                  : group === 'PARTNERS'
+                    ? 'Manage financing and insurance partners, including API keys and secrets, directly from the database.'
+                : 'Manage database-backed runtime settings for this integration group.'}
           </p>
         </div>
-        <button onClick={save} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white">
-          Save Changes
-        </button>
+        <div className="flex flex-wrap gap-3">
+          {group === 'CURRENCY' ? (
+            <button
+              onClick={() => void syncCurrencyRates()}
+              disabled={syncing || saving}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {syncing ? 'Syncing...' : 'Sync Rates Now'}
+            </button>
+          ) : null}
+          {!isLanguageGroup && !isPartnersGroup ? (
+            <button
+              onClick={() => void save()}
+              disabled={saving || syncing}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {group === 'PAYMENT' ? (
@@ -346,6 +638,7 @@ export default function AdminSettingsGroupPage() {
                       value={mergedValues[item.key] ?? ''}
                       onChange={(value) => setValue(item.key, value)}
                       onReset={() => resetSetting(item.key)}
+                      resetting={resettingKey === item.key}
                     />
                   ))}
 
@@ -365,6 +658,338 @@ export default function AdminSettingsGroupPage() {
             </div>
           )}
         </div>
+      ) : isPartnersGroup ? (
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900">Partner CRUD</h2>
+              <p className="text-sm text-gray-500">Create or update financing and insurance partners. Secrets stay in the database and are used at runtime from there.</p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <select value={partnerForm.type} onChange={(event) => setPartnerForm((prev) => ({ ...prev, type: event.target.value as 'FINANCING' | 'INSURANCE' }))} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
+                <option value="FINANCING">Financing</option>
+                <option value="INSURANCE">Insurance</option>
+              </select>
+              <input value={partnerForm.code} onChange={(event) => setPartnerForm((prev) => ({ ...prev, code: event.target.value }))} placeholder="Code" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={partnerForm.name} onChange={(event) => setPartnerForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={partnerForm.website} onChange={(event) => setPartnerForm((prev) => ({ ...prev, website: event.target.value }))} placeholder="Website" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={partnerForm.contactEmail} onChange={(event) => setPartnerForm((prev) => ({ ...prev, contactEmail: event.target.value }))} placeholder="Contact email" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={partnerForm.apiBaseUrl} onChange={(event) => setPartnerForm((prev) => ({ ...prev, apiBaseUrl: event.target.value }))} placeholder="API base URL" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={partnerForm.apiKey} onChange={(event) => setPartnerForm((prev) => ({ ...prev, apiKey: event.target.value }))} placeholder="API key" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={partnerForm.apiSecret} onChange={(event) => setPartnerForm((prev) => ({ ...prev, apiSecret: event.target.value }))} placeholder="API secret" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={partnerForm.accessToken} onChange={(event) => setPartnerForm((prev) => ({ ...prev, accessToken: event.target.value }))} placeholder="Access token" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm md:col-span-2 xl:col-span-2" />
+              <input value={partnerForm.description} onChange={(event) => setPartnerForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="Description" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm md:col-span-2" />
+              <textarea value={partnerForm.metadata} onChange={(event) => setPartnerForm((prev) => ({ ...prev, metadata: event.target.value }))} placeholder="Metadata / JSON / notes" rows={3} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm md:col-span-2" />
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                <span>Default partner</span>
+                <input type="checkbox" checked={partnerForm.isDefault} onChange={(event) => setPartnerForm((prev) => ({ ...prev, isDefault: event.target.checked }))} />
+              </label>
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                <span>Active</span>
+                <input type="checkbox" checked={partnerForm.isActive} onChange={(event) => setPartnerForm((prev) => ({ ...prev, isActive: event.target.checked }))} />
+              </label>
+            </div>
+
+            <div className="mt-3 flex gap-3">
+              <button type="button" onClick={() => void savePartnerRecord()} disabled={savingPartner || !partnerForm.code.trim() || !partnerForm.name.trim()} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
+                {savingPartner ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {savingPartner ? 'Saving...' : partnerForm.id ? 'Update Partner' : 'Create Partner'}
+              </button>
+              {partnerForm.id ? (
+                <button type="button" onClick={() => setPartnerForm({ id: '', type: 'FINANCING', code: '', name: '', description: '', website: '', contactEmail: '', apiBaseUrl: '', apiKey: '', apiSecret: '', accessToken: '', metadata: '', isDefault: false, isActive: true })} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700">
+                  Clear
+                </button>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <h2 className="text-base font-semibold text-gray-900">Saved Partners</h2>
+              <p className="text-sm text-gray-500">Financing and insurance partners now run from DB-backed records, including key and secret storage.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Type</th>
+                    <th className="px-4 py-3 font-medium">Code</th>
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Credentials</th>
+                    <th className="px-4 py-3 font-medium">Default</th>
+                    <th className="px-4 py-3 font-medium">Active</th>
+                    <th className="px-4 py-3 font-medium">Requests</th>
+                    <th className="px-4 py-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {partnersSnapshotData.map((partner) => (
+                    <tr key={partner.id} className="text-gray-700">
+                      <td className="px-4 py-3">{partner.type}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-900">{partner.code}</td>
+                      <td className="px-4 py-3">
+                        <div>{partner.name}</div>
+                        <div className="text-xs text-gray-400">{partner.contactEmail || partner.website || '-'}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        Key: {partner.hasApiKey ? 'Yes' : 'No'} | Secret: {partner.hasApiSecret ? 'Yes' : 'No'} | Token: {partner.hasAccessToken ? 'Yes' : 'No'}
+                      </td>
+                      <td className="px-4 py-3">{partner.isDefault ? 'Yes' : 'No'}</td>
+                      <td className="px-4 py-3">{partner.isActive ? 'Yes' : 'No'}</td>
+                      <td className="px-4 py-3">{partner.requestCount}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => setPartnerForm({ id: partner.id, type: partner.type, code: partner.code, name: partner.name, description: partner.description || '', website: partner.website || '', contactEmail: partner.contactEmail || '', apiBaseUrl: partner.apiBaseUrl || '', apiKey: partner.apiKey || '', apiSecret: partner.apiSecret || '', accessToken: partner.accessToken || '', metadata: partner.metadata || '', isDefault: partner.isDefault, isActive: partner.isActive })} className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700">
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => void deletePartnerRecord(partner.id)} disabled={deletingPartnerId === partner.id} className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 disabled:cursor-not-allowed disabled:opacity-60">
+                            {deletingPartnerId === partner.id ? 'Removing...' : 'Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!partnersSnapshotData.length && (
+              <div className="px-4 py-6 text-sm text-gray-500">No partner records found in the database.</div>
+            )}
+          </section>
+        </div>
+      ) : isLanguageGroup ? (
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Add Language</h2>
+                <p className="text-sm text-gray-500">Create a language row first. The system will create all translation keys in DB for that language.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 md:flex md:items-center md:gap-4">
+                <span>Base: <strong className="text-gray-900">{languageSnapshotData?.baseLanguage || 'en'}</strong></span>
+                <span>Keys: <strong className="text-gray-900">{languageSnapshotData?.totalKeys || 0}</strong></span>
+                <span>Languages: <strong className="text-gray-900">{languageSnapshotData?.languages.length || 0}</strong></span>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <input
+                type="text"
+                value={languageForm.code}
+                onChange={(event) => setLanguageForm((prev) => ({ ...prev, code: event.target.value }))}
+                placeholder="Code (e.g. fr)"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                value={languageForm.name}
+                onChange={(event) => setLanguageForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Language name"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                value={languageForm.nativeName}
+                onChange={(event) => setLanguageForm((prev) => ({ ...prev, nativeName: event.target.value }))}
+                placeholder="Native name"
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                <span>RTL language</span>
+                <input
+                  type="checkbox"
+                  checked={languageForm.isRtl}
+                  onChange={(event) => setLanguageForm((prev) => ({ ...prev, isRtl: event.target.checked }))}
+                />
+              </label>
+            </div>
+
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => void createLanguageRecord()}
+                disabled={creatingLanguage || !languageForm.code.trim() || !languageForm.name.trim()}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {creatingLanguage ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {creatingLanguage ? 'Adding...' : 'Add Language'}
+              </button>
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <h2 className="text-base font-semibold text-gray-900">Languages In Database</h2>
+              <p className="text-sm text-gray-500">Each language has its own one-click translation button. New and old languages both use the same flow.</p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Code</th>
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Native</th>
+                    <th className="px-4 py-3 font-medium">Keys</th>
+                    <th className="px-4 py-3 font-medium">Direction</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Last Translate</th>
+                    <th className="px-4 py-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {(languageSnapshotData?.languages || []).map((language) => (
+                    <tr key={language.id} className="text-gray-700">
+                      <td className="px-4 py-3 font-semibold text-gray-900">{language.code.toUpperCase()}</td>
+                      <td className="px-4 py-3">{language.name}</td>
+                      <td className="px-4 py-3">{language.nativeName || '-'}</td>
+                      <td className="px-4 py-3">{language.translationCount}</td>
+                      <td className="px-4 py-3">{language.isRtl ? 'RTL' : 'LTR'}</td>
+                      <td className="px-4 py-3">
+                        {language.isDefault ? 'Base' : language.autoTranslateReady ? 'Translated' : 'Pending'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        {language.lastTranslatedAt ? new Date(language.lastTranslatedAt).toLocaleString() : 'Not yet'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {language.isDefault ? (
+                          <span className="text-xs font-medium text-gray-400">Base language</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void translateSingleLanguage(language.id)}
+                            disabled={translatingLanguageId === language.id}
+                            className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {translatingLanguageId === language.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            {translatingLanguageId === language.id ? 'Translating...' : 'Translate Now'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {!languageSnapshotData?.languages?.length && (
+              <div className="px-4 py-6 text-sm text-gray-500">No language rows found in the database.</div>
+            )}
+          </section>
+        </div>
+      ) : isCurrencyGroup ? (
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Currency Settings</h2>
+                <p className="text-sm text-gray-500">Compact inputs for the DB-backed exchange rate configuration.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 md:flex md:items-center md:gap-4">
+                <span>Base: <strong className="text-gray-900">{currencySnapshotData?.baseCode || 'USD'}</strong></span>
+                <span>Display: <strong className="text-gray-900">{currencySnapshotData?.defaultDisplayCode || 'USD'}</strong></span>
+                <span>Status: <strong className="text-gray-900">{currencySnapshotData?.enabled ? 'Enabled' : 'Disabled'}</strong></span>
+                <span>Synced: <strong className="text-gray-900">{currencySnapshotData?.lastSyncedAt ? new Date(currencySnapshotData.lastSyncedAt).toLocaleString() : 'Not yet'}</strong></span>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {settings.map((item) => (
+                <SettingField
+                  key={item.key}
+                  item={item}
+                  value={mergedValues[item.key] ?? ''}
+                  onChange={(value) => setValue(item.key, value)}
+                  onReset={() => resetSetting(item.key)}
+                  resetting={resettingKey === item.key}
+                  compact
+                />
+              ))}
+            </div>
+
+            {!isLoading && settings.length === 0 && (
+              <div className="rounded-xl border border-gray-100 bg-white p-6 text-sm text-gray-500">
+                No settings found for this group.
+              </div>
+            )}
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">Saved Currency Rates</h2>
+                  <p className="text-sm text-gray-500">These rows are being read from the database and shown directly in the admin table.</p>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Showing {allCurrencies.length === 0 ? 0 : (normalizedCurrencyPage - 1) * CURRENCY_PAGE_SIZE + 1}
+                  -
+                  {Math.min(normalizedCurrencyPage * CURRENCY_PAGE_SIZE, allCurrencies.length)} of {allCurrencies.length}
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">ID</th>
+                    <th className="px-4 py-3 font-medium">Code</th>
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Symbol</th>
+                    <th className="px-4 py-3 font-medium">Rate</th>
+                    <th className="px-4 py-3 font-medium">Default</th>
+                    <th className="px-4 py-3 font-medium">Active</th>
+                    <th className="px-4 py-3 font-medium">Updated</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {paginatedCurrencies.map((currency) => (
+                    <tr key={currency.id} className="text-gray-700">
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">{currency.id}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-900">{currency.code}</td>
+                      <td className="px-4 py-3">{currency.name}</td>
+                      <td className="px-4 py-3">{currency.symbol}</td>
+                      <td className="px-4 py-3">{currency.rate}</td>
+                      <td className="px-4 py-3">{currency.isDefault ? 'Yes' : 'No'}</td>
+                      <td className="px-4 py-3">{currency.isActive ? 'Yes' : 'No'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{new Date(currency.updatedAt).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {allCurrencies.length > 0 && (
+              <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setCurrencyPage((page) => Math.max(1, page - 1))}
+                  disabled={normalizedCurrencyPage <= 1}
+                  className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <div className="text-xs text-gray-500">
+                  Page {normalizedCurrencyPage} / {totalCurrencyPages}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrencyPage((page) => Math.min(totalCurrencyPages, page + 1))}
+                  disabled={normalizedCurrencyPage >= totalCurrencyPages}
+                  className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+
+            {!allCurrencies.length && (
+              <div className="px-4 py-6 text-sm text-gray-500">No currency rows found in the database.</div>
+            )}
+          </section>
+        </div>
       ) : (
         <div className="space-y-4">
           {settings.map((item) => (
@@ -374,6 +999,7 @@ export default function AdminSettingsGroupPage() {
               value={mergedValues[item.key] ?? ''}
               onChange={(value) => setValue(item.key, value)}
               onReset={() => resetSetting(item.key)}
+              resetting={resettingKey === item.key}
             />
           ))}
 

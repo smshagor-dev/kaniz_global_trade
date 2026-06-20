@@ -18,6 +18,7 @@ const FOLDER_MAP: Record<string, string> = {
   product_image:    UPLOAD_FOLDERS.PRODUCT_IMAGES,
   product_video:    UPLOAD_FOLDERS.PRODUCT_VIDEOS,
   product_doc:      UPLOAD_FOLDERS.PRODUCT_DOCS,
+  category_image:   UPLOAD_FOLDERS.CATEGORY_IMAGES,
   company_logo:     UPLOAD_FOLDERS.COMPANY_LOGOS,
   company_banner:   UPLOAD_FOLDERS.COMPANY_BANNERS,
   company_gallery:  UPLOAD_FOLDERS.COMPANY_GALLERY,

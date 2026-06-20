@@ -35,7 +35,7 @@ export default async function PricingPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-16">
+    <div className="w-full px-4 py-16 md:px-6 lg:px-8 2xl:px-10">
       {/* Header */}
       <div className="text-center mb-12">
         <h1 className="text-4xl font-extrabold text-gray-900 mb-4">Simple, Transparent Pricing</h1>

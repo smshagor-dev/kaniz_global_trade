@@ -64,7 +64,7 @@ export default async function CompaniesPage({ searchParams }: Props) {
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Find Verified Suppliers</h1>
         <p className="text-gray-500 text-sm mt-1">{total.toLocaleString()} companies from around the world</p>

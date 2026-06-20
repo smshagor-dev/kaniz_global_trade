@@ -37,6 +37,7 @@ export const UPLOAD_FOLDERS = {
   PRODUCT_IMAGES: 'products/images',
   PRODUCT_VIDEOS: 'products/videos',
   PRODUCT_DOCS: 'products/documents',
+  CATEGORY_IMAGES: 'categories/images',
   COMPANY_LOGOS: 'companies/logos',
   COMPANY_BANNERS: 'companies/banners',
   COMPANY_GALLERY: 'companies/gallery',

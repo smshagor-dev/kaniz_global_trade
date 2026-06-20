@@ -10,7 +10,7 @@ interface Props {
 export default async function SubcategoryPage({ params }: Props) {
   const { slug, subcategorySlug } = await params
 
-  const category = await prisma.category.findUnique({ where: { slug } })
+  const category = await prisma.category.findFirst({ where: { slug, approvalStatus: 'APPROVED' } })
   if (!category) notFound()
 
   const subcategory = await prisma.subCategory.findFirst({
@@ -18,6 +18,7 @@ export default async function SubcategoryPage({ params }: Props) {
       slug: subcategorySlug,
       categoryId: category.id,
       isActive: true,
+      approvalStatus: 'APPROVED',
     },
   })
   if (!subcategory) notFound()
@@ -48,7 +49,7 @@ export default async function SubcategoryPage({ params }: Props) {
   })
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       <div className="rounded-[28px] border border-gray-200 bg-white p-6 shadow-sm">
         <div className="text-sm text-gray-500">
           <Link href={`/categories/${category.slug}`} className="hover:text-blue-700">{category.name}</Link>

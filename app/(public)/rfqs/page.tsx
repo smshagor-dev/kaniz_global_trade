@@ -2,6 +2,7 @@ import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
 import { FileText, Plus, MapPin, Calendar, Package, ArrowRight } from 'lucide-react'
 import type { Metadata } from 'next'
+import { CurrencyAmount } from '@/components/currency/currency-amount'
 
 export const metadata: Metadata = {
   title: 'Request for Quotation (RFQ) Board',
@@ -50,7 +51,7 @@ export default async function RFQsPage({ searchParams }: Props) {
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">RFQ Board</h1>
@@ -114,7 +115,7 @@ export default async function RFQsPage({ searchParams }: Props) {
                       </span>
                     )}
                     {rfq.budget && (
-                      <span>Budget: {rfq.currency?.symbol}{Number(rfq.budget).toLocaleString()} {rfq.currency?.code}</span>
+                      <span>Budget: <CurrencyAmount amount={rfq.budget} currencyCode={rfq.currency?.code} showCode /></span>
                     )}
                     {rfq.requiredDate && (
                       <span className="flex items-center gap-1">

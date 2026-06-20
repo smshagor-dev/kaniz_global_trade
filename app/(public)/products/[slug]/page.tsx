@@ -4,6 +4,8 @@ import prisma from '@/lib/db/prisma'
 import { CheckCircle, Package, MessageSquare, FileText, Globe, Star, ArrowRight, Shield, Scale } from 'lucide-react'
 import type { Metadata } from 'next'
 import { InquiryForm } from '@/components/public/products/inquiry-form'
+import { CurrencyAmount } from '@/components/currency/currency-amount'
+import { CurrencyRange } from '@/components/currency/currency-range'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -24,7 +26,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductDetailPage({ params }: Props) {
   const { slug } = await params
   const product = await prisma.product.findFirst({
-    where: { slug, status: 'APPROVED', deletedAt: null },
+    where: {
+      slug,
+      status: 'APPROVED',
+      deletedAt: null,
+      category: { approvalStatus: 'APPROVED', isActive: true },
+      AND: [
+        {
+          OR: [
+            { subcategoryId: null },
+            { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
+          ],
+        },
+      ],
+    },
     include: {
       images: { orderBy: { sortOrder: 'asc' } },
       videos: true,
@@ -51,13 +66,27 @@ export default async function ProductDetailPage({ params }: Props) {
 
   // Related products
   const related = await prisma.product.findMany({
-    where: { categoryId: product.categoryId, status: 'APPROVED', id: { not: product.id }, deletedAt: null },
+    where: {
+      categoryId: product.categoryId,
+      status: 'APPROVED',
+      id: { not: product.id },
+      deletedAt: null,
+      category: { approvalStatus: 'APPROVED', isActive: true },
+      AND: [
+        {
+          OR: [
+            { subcategoryId: null },
+            { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
+          ],
+        },
+      ],
+    },
     take: 4,
     include: { images: { where: { isPrimary: true }, take: 1 }, company: { select: { name: true } } },
   })
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <Link href="/" className="hover:text-blue-700">Home</Link>
@@ -111,8 +140,7 @@ export default async function ProductDetailPage({ params }: Props) {
             <div className="bg-gray-50 rounded-xl p-4 mb-6">
               {product.priceMin ? (
                 <p className="text-2xl font-bold text-gray-900">
-                  {product.currency?.symbol || '$'}{Number(product.priceMin).toLocaleString()}
-                  {product.priceMax && ` – ${product.currency?.symbol || '$'}${Number(product.priceMax).toLocaleString()}`}
+                  <CurrencyRange minAmount={product.priceMin} maxAmount={product.priceMax} currencyCode={product.currency?.code} />
                   <span className="text-base font-normal text-gray-500 ml-1">/ {product.moqUnit || 'Unit'}</span>
                 </p>
               ) : (
@@ -142,7 +170,9 @@ export default async function ProductDetailPage({ params }: Props) {
                         <td className="px-3 py-2">
                           {Number(tier.minQty).toLocaleString()}{tier.maxQty ? ` – ${Number(tier.maxQty).toLocaleString()}` : '+'}
                         </td>
-                        <td className="px-3 py-2 font-medium">{product.currency?.symbol}{Number(tier.price).toFixed(2)}</td>
+                        <td className="px-3 py-2 font-medium">
+                          <CurrencyAmount amount={tier.price} currencyCode={product.currency?.code} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -287,11 +317,13 @@ export default async function ProductDetailPage({ params }: Props) {
           </div>
 
           {/* Inquiry form */}
-          <InquiryForm
-            companyId={product.company.id}
-            productId={product.id}
-            productName={product.name}
-          />
+          <div id="product-inquiry">
+            <InquiryForm
+              companyId={product.company.id}
+              productId={product.id}
+              productName={product.name}
+            />
+          </div>
         </div>
       </div>
 

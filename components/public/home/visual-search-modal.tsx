@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Camera, CheckCircle2, Loader2, MapPin, Package, Search, X } from 'lucide-react'
+import { CurrencyRange } from '@/components/currency/currency-range'
 
 type VisualMatch = {
   id: string
@@ -47,17 +48,6 @@ function formatNumber(value?: number | string | null) {
   const numeric = Number(value)
   if (Number.isNaN(numeric)) return String(value)
   return numeric.toLocaleString()
-}
-
-function formatPrice(product: VisualMatch) {
-  const symbol = product.currency?.symbol || '$'
-  const min = formatNumber(product.priceMin)
-  const max = formatNumber(product.priceMax)
-
-  if (min && max && min !== max) return `${symbol}${min} - ${symbol}${max}`
-  if (min) return `${symbol}${min}`
-  if (max) return `${symbol}${max}`
-  return 'Price on request'
 }
 
 export function VisualSearchModal({
@@ -299,7 +289,9 @@ export function VisualSearchModal({
                                 </h3>
                               </div>
                               <div>
-                                <p className="text-lg font-black text-gray-950">{formatPrice(match)}</p>
+                                <p className="text-lg font-black text-gray-950">
+                                  <CurrencyRange minAmount={match.priceMin} maxAmount={match.priceMax} currencyCode={match.currency?.code} />
+                                </p>
                                 <p className="text-xs text-gray-500">
                                   {formatNumber(match.moq) ? `MOQ: ${formatNumber(match.moq)} ${match.moqUnit || 'units'}` : 'MOQ on request'}
                                 </p>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LoadingButton } from '@/components/ui/loading-button'
+import { CurrencyRange } from '@/components/currency/currency-range'
 
 interface Product {
   id: string; name: string; slug: string; status: string
@@ -18,7 +19,7 @@ interface Product {
   images: { url: string }[]
   category: { name: string }
   priceMin?: number; priceMax?: number
-  currency?: { symbol: string }
+  currency?: { symbol: string; code?: string }
 }
 
 export default function DashboardProductsPage() {
@@ -128,8 +129,7 @@ export default function DashboardProductsPage() {
                   <h3 className="font-semibold text-gray-900 text-sm truncate">{p.name}</h3>
                   {p.priceMin && (
                     <p className="text-sm font-bold text-blue-700 mt-1">
-                      {p.currency?.symbol}{Number(p.priceMin).toLocaleString()}
-                      {p.priceMax && ` – ${p.currency?.symbol}${Number(p.priceMax).toLocaleString()}`}
+                      <CurrencyRange minAmount={p.priceMin} maxAmount={p.priceMax} currencyCode={p.currency?.code} />
                     </p>
                   )}
                   <div className="flex items-center justify-between mt-2 text-xs text-gray-400">

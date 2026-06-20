@@ -3,11 +3,13 @@ import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
+import { ensureServicePartnersSeeded, getDefaultPartner } from '@/lib/partners/server'
 
 const createSchema = z.object({
   tradeOrderId: z.string().optional(),
   sampleOrderId: z.string().optional(),
-  providerName: z.string().min(2),
+  partnerId: z.string().optional(),
+  providerName: z.string().min(2).optional(),
   policyType: z.string().default('CARGO_INSURANCE'),
   insuredAmount: z.number().positive(),
   premiumAmount: z.number().nonnegative(),
@@ -20,6 +22,7 @@ const createSchema = z.object({
 
 export async function GET(req: NextRequest) {
   try {
+    await ensureServicePartnersSeeded()
     const authUser = await requireAuth(req)
     const where: Record<string, unknown> = {}
     if (authUser.roles.includes(ROLES.BUYER)) where.buyerId = authUser.userId
@@ -31,6 +34,7 @@ export async function GET(req: NextRequest) {
       include: {
         company: { select: { id: true, name: true, slug: true } },
         buyer: { select: { id: true, firstName: true, lastName: true } },
+        partner: { select: { id: true, code: true, name: true, type: true, isDefault: true } },
         tradeOrder: { select: { id: true, productName: true } },
         sampleOrder: { select: { id: true, title: true } },
         claims: { orderBy: { createdAt: 'desc' } },
@@ -44,6 +48,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureServicePartnersSeeded()
     const authUser = await requireAuth(req)
     const data = createSchema.parse(await req.json())
     let buyerId = authUser.userId
@@ -65,13 +70,21 @@ export async function POST(req: NextRequest) {
 
     if (!companyId) throw new ApiError(422, 'Company required')
 
+    const selectedPartner = data.partnerId
+      ? await prisma.servicePartner.findFirst({ where: { id: data.partnerId, type: 'INSURANCE', isActive: true } })
+      : await getDefaultPartner('INSURANCE')
+
+    const partnerId = 'id' in (selectedPartner || {}) ? selectedPartner?.id : null
+    const providerName = 'name' in (selectedPartner || {}) ? selectedPartner?.name : data.providerName
+
     const policy = await prisma.insurancePolicy.create({
       data: {
         companyId,
         buyerId,
         tradeOrderId: data.tradeOrderId,
         sampleOrderId: data.sampleOrderId,
-        providerName: data.providerName,
+        partnerId,
+        providerName: providerName || 'Insurance Partner',
         policyType: data.policyType,
         insuredAmount: data.insuredAmount,
         premiumAmount: data.premiumAmount,

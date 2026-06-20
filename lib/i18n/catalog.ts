@@ -1,0 +1,43 @@
+export const LANGUAGE_METADATA = [
+  { code: 'en', name: 'English', nativeName: 'English', isDefault: true, isRtl: false },
+  { code: 'zh', name: 'Chinese', nativeName: '中文', isDefault: false, isRtl: false },
+  { code: 'ar', name: 'Arabic', nativeName: 'العربية', isDefault: false, isRtl: true },
+  { code: 'es', name: 'Spanish', nativeName: 'Español', isDefault: false, isRtl: false },
+  { code: 'nl', name: 'Dutch', nativeName: 'Nederlands', isDefault: false, isRtl: false },
+  { code: 'pt', name: 'Portuguese', nativeName: 'Português', isDefault: false, isRtl: false },
+  { code: 'fr', name: 'French', nativeName: 'Français', isDefault: false, isRtl: false },
+  { code: 'de', name: 'German', nativeName: 'Deutsch', isDefault: false, isRtl: false },
+  { code: 'it', name: 'Italian', nativeName: 'Italiano', isDefault: false, isRtl: false },
+  { code: 'tr', name: 'Turkish', nativeName: 'Türkçe', isDefault: false, isRtl: false },
+  { code: 'ru', name: 'Russian', nativeName: 'Русский', isDefault: false, isRtl: false },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語', isDefault: false, isRtl: false },
+  { code: 'ko', name: 'Korean', nativeName: '한국어', isDefault: false, isRtl: false },
+  { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', isDefault: false, isRtl: false },
+  { code: 'bn', name: 'Bengali', nativeName: 'বাংলা', isDefault: false, isRtl: false },
+  { code: 'ur', name: 'Urdu', nativeName: 'اردو', isDefault: false, isRtl: true },
+  { code: 'id', name: 'Indonesian', nativeName: 'Bahasa Indonesia', isDefault: false, isRtl: false },
+  { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', isDefault: false, isRtl: false },
+  { code: 'th', name: 'Thai', nativeName: 'ไทย', isDefault: false, isRtl: false },
+  { code: 'pl', name: 'Polish', nativeName: 'Polski', isDefault: false, isRtl: false },
+  { code: 'fa', name: 'Persian', nativeName: 'فارسی', isDefault: false, isRtl: true },
+  { code: 'ms', name: 'Malay', nativeName: 'Bahasa Melayu', isDefault: false, isRtl: false },
+] as const
+
+export const DEFAULT_LANGUAGE_CODES = LANGUAGE_METADATA.map((language) => language.code)
+
+export const ENGLISH_TRANSLATION_SEED: Record<string, string> = {
+  products: 'Products',
+  suppliers: 'Suppliers',
+  rfq: 'RFQ',
+  compare: 'Compare',
+  aiMatching: 'AI Matching',
+  virtualTours: 'Virtual Tours',
+  signIn: 'Sign In',
+  register: 'Register Free',
+  dashboard: 'Dashboard',
+  sampleOrders: 'Sample Orders',
+  shipments: 'Shipments',
+  tradeAssurance: 'Trade Assurance',
+  browseProducts: 'Browse Products',
+  language: 'Language',
+}

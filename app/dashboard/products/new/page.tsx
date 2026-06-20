@@ -49,7 +49,7 @@ export default function NewProductPage() {
 
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
-    queryFn:  () => get<{ id: string; name: string }[]>('/categories?parentOnly=true'),
+    queryFn:  () => get<{ id: string; name: string }[]>('/categories?parentOnly=true&scope=dashboard'),
   })
   const categories = (categoriesData?.data as unknown as { id: string; name: string }[]) || []
 
@@ -62,7 +62,7 @@ export default function NewProductPage() {
 
   const { data: subCatData } = useQuery({
     queryKey: ['subcategories', selectedCategoryId],
-    queryFn:  () => get<{ id: string; name: string }[]>(`/categories/${selectedCategoryId}/subcategories`),
+    queryFn:  () => get<{ id: string; name: string }[]>(`/categories/${selectedCategoryId}/subcategories?scope=dashboard`),
     enabled:  !!selectedCategoryId,
   })
   const subCategories = (subCatData?.data as unknown as { id: string; name: string }[]) || []

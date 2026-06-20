@@ -1,135 +1,114 @@
 'use client'
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { DEFAULT_LANGUAGE_CODES } from '@/lib/i18n/catalog'
 
-export const SUPPORTED_LANGUAGES = [
-  'en', 'zh', 'ar', 'es', 'nl', 'pt', 'fr', 'de', 'it', 'tr', 'ru', 'ja',
-  'ko', 'hi', 'bn', 'ur', 'id', 'vi', 'th', 'pl', 'fa', 'ms',
-] as const
-export type Language = (typeof SUPPORTED_LANGUAGES)[number]
+export const SUPPORTED_LANGUAGES = DEFAULT_LANGUAGE_CODES
+export type Language = string
 
-const dictionaries: Partial<Record<Language, Record<string, string>>> = {
-  en: {
-    products: 'Products',
-    suppliers: 'Suppliers',
-    rfq: 'RFQ',
-    compare: 'Compare',
-    aiMatching: 'AI Matching',
-    virtualTours: 'Virtual Tours',
-    signIn: 'Sign In',
-    register: 'Register Free',
-    dashboard: 'Dashboard',
-    sampleOrders: 'Sample Orders',
-    shipments: 'Shipments',
-    tradeAssurance: 'Trade Assurance',
-    browseProducts: 'Browse Products',
-    language: 'Language',
-  },
-  zh: {
-    products: '产品',
-    suppliers: '供应商',
-    rfq: '询价',
-    compare: '比较',
-    aiMatching: '智能匹配',
-    virtualTours: '工厂视频',
-    signIn: '登录',
-    register: '免费注册',
-    dashboard: '控制台',
-    sampleOrders: '样品订单',
-    shipments: '物流',
-    tradeAssurance: '交易保障',
-    browseProducts: '浏览产品',
-    language: '语言',
-  },
-  ar: {
-    products: 'المنتجات',
-    suppliers: 'الموردون',
-    rfq: 'طلب عرض سعر',
-    compare: 'مقارنة',
-    aiMatching: 'مطابقة ذكية',
-    virtualTours: 'جولات المصنع',
-    signIn: 'تسجيل الدخول',
-    register: 'سجل مجانا',
-    dashboard: 'لوحة التحكم',
-    sampleOrders: 'طلبات العينات',
-    shipments: 'الشحنات',
-    tradeAssurance: 'ضمان التجارة',
-    browseProducts: 'تصفح المنتجات',
-    language: 'اللغة',
-  },
-  es: {
-    products: 'Productos',
-    suppliers: 'Proveedores',
-    rfq: 'RFQ',
-    compare: 'Comparar',
-    aiMatching: 'Coincidencia IA',
-    virtualTours: 'Tours Virtuales',
-    signIn: 'Iniciar sesión',
-    register: 'Registro gratis',
-    dashboard: 'Panel',
-    sampleOrders: 'Pedidos de muestra',
-    shipments: 'Envíos',
-    tradeAssurance: 'Garantía comercial',
-    browseProducts: 'Explorar productos',
-    language: 'Idioma',
-  },
-  nl: {
-    products: 'Producten',
-    suppliers: 'Leveranciers',
-    rfq: 'RFQ',
-    compare: 'Vergelijken',
-    aiMatching: 'AI-matching',
-    virtualTours: 'Virtuele Tours',
-    signIn: 'Inloggen',
-    register: 'Gratis registreren',
-    dashboard: 'Dashboard',
-    sampleOrders: 'Sample orders',
-    shipments: 'Zendingen',
-    tradeAssurance: 'Handelszekerheid',
-    browseProducts: 'Producten bekijken',
-    language: 'Taal',
-  },
-  pt: {
-    products: 'Produtos',
-    suppliers: 'Fornecedores',
-    rfq: 'RFQ',
-    compare: 'Comparar',
-    aiMatching: 'Correspondência IA',
-    virtualTours: 'Tours Virtuais',
-    signIn: 'Entrar',
-    register: 'Registrar grátis',
-    dashboard: 'Painel',
-    sampleOrders: 'Pedidos de amostra',
-    shipments: 'Envios',
-    tradeAssurance: 'Garantia comercial',
-    browseProducts: 'Ver produtos',
-    language: 'Idioma',
-  },
+type LanguageOption = {
+  id: string
+  code: string
+  name: string
+  nativeName?: string | null
+  isDefault: boolean
+  isActive: boolean
+  isRtl: boolean
+  autoTranslateReady: boolean
+  lastTranslatedAt: string | null
+}
+
+type TranslationPayload = {
+  languages: LanguageOption[]
+  defaultLanguage: string
+  activeLanguage: string
+  translations: Record<string, string>
 }
 
 type LanguageContextValue = {
   language: Language
   setLanguage: (language: Language) => void
   t: (key: string) => string
+  availableLanguages: LanguageOption[]
+  isLoading: boolean
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null)
 
+function readStoredLanguage() {
+  return typeof window !== 'undefined' ? window.localStorage.getItem('kgt-language') : null
+}
+
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>('en')
+  const [availableLanguages, setAvailableLanguages] = useState<LanguageOption[]>([])
+  const [translations, setTranslations] = useState<Record<string, string>>({})
+  const [defaultLanguage, setDefaultLanguage] = useState('en')
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const stored = typeof window !== 'undefined' ? window.localStorage.getItem('kgt-language') : null
-    if (stored && SUPPORTED_LANGUAGES.includes(stored as Language)) {
-      setLanguageState(stored as Language)
-    }
+    const stored = readStoredLanguage()
+    if (stored) setLanguageState(stored)
   }, [])
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('kgt-language', language)
-      document.documentElement.lang = language
-      document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr'
+    let active = true
+    setIsLoading(true)
+
+    fetch(`/api/i18n?language=${encodeURIComponent(language)}`, {
+      method: 'GET',
+      cache: 'no-store',
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to load translations')
+        return response.json() as Promise<{ data?: TranslationPayload }>
+      })
+      .then((payload) => {
+        if (!active) return
+        const data = payload.data
+        const languages = data?.languages || []
+        const fallbackLanguage = languages.find((item) => item.isDefault)?.code || data?.defaultLanguage || 'en'
+        const isSupported = languages.some((item) => item.code === language)
+        const resolvedLanguage = isSupported ? language : fallbackLanguage
+
+        setAvailableLanguages(languages)
+        setDefaultLanguage(fallbackLanguage)
+        setTranslations(data?.translations || {})
+
+        if (resolvedLanguage !== language) {
+          setLanguageState(resolvedLanguage)
+          return
+        }
+
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('kgt-language', resolvedLanguage)
+          const selected = languages.find((item) => item.code === resolvedLanguage)
+          document.documentElement.lang = resolvedLanguage
+          document.documentElement.dir = selected?.isRtl ? 'rtl' : 'ltr'
+        }
+      })
+      .catch(() => {
+        if (!active) return
+        setAvailableLanguages(
+          DEFAULT_LANGUAGE_CODES.map((code) => ({
+            id: code,
+            code,
+            name: code.toUpperCase(),
+            nativeName: code.toUpperCase(),
+            isDefault: code === 'en',
+            isActive: true,
+            isRtl: ['ar', 'ur', 'fa'].includes(code),
+            autoTranslateReady: code === 'en',
+            lastTranslatedAt: null,
+          }))
+        )
+      })
+      .finally(() => {
+        if (active) setIsLoading(false)
+      })
+
+    return () => {
+      active = false
     }
   }, [language])
 
@@ -137,9 +116,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     () => ({
       language,
       setLanguage: setLanguageState,
-      t: (key: string) => dictionaries[language]?.[key] || dictionaries.en?.[key] || key,
+      availableLanguages,
+      isLoading,
+      t: (key: string) => translations[key] || key,
     }),
-    [language]
+    [availableLanguages, isLoading, language, translations]
   )
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>

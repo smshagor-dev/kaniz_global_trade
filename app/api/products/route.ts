@@ -42,6 +42,15 @@ export async function GET(req: NextRequest) {
     // Public users only see approved products
     if (!authUser || (!isAdmin(authUser) && !authUser.roles.includes(ROLES.SUPPLIER_OWNER))) {
       where.status = 'APPROVED'
+      where.category = { approvalStatus: 'APPROVED', isActive: true }
+      where.AND = [
+        {
+          OR: [
+            { subcategoryId: null },
+            { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
+          ],
+        },
+      ]
     } else if (authUser.roles.includes(ROLES.SUPPLIER_OWNER) && !isAdmin(authUser)) {
       // Suppliers see their own company products
       const companyId = searchParams.get('companyId')

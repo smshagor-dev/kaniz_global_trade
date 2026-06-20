@@ -62,7 +62,7 @@ export default async function CompanyDetailPage({ params }: Props) {
   prisma.company.update({ where: { id: company.id }, data: { totalViews: { increment: 1 } } }).catch(() => {})
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <Link href="/" className="hover:text-blue-700">Home</Link>

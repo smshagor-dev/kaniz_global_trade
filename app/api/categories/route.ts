@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAdmin, getAuthUser } from '@/lib/permissions'
+import { requireAuth, getAuthUser, isAdmin, isSupplier, ApiError } from '@/lib/permissions'
 import { successResponse, handleApiError } from '@/lib/utils/api'
 import { slugify, uniqueSlug } from '@/lib/utils/slug'
 
@@ -20,11 +20,22 @@ const createCategorySchema = z.object({
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
-    const withSubs  = searchParams.get('withSubs') === 'true'
+    const withSubs = searchParams.get('withSubs') === 'true'
     const parentOnly = searchParams.get('parentOnly') === 'true'
+    const scope = searchParams.get('scope')
+    const authUser = await getAuthUser(req)
 
     const where: Record<string, unknown> = { isActive: true }
     if (parentOnly) where.parentId = null
+
+    if (scope === 'dashboard' && authUser && (isSupplier(authUser) || isAdmin(authUser))) {
+      where.OR = [
+        { approvalStatus: 'APPROVED' },
+        { createdById: authUser.userId },
+      ]
+    } else {
+      where.approvalStatus = 'APPROVED'
+    }
 
     const categories = await prisma.category.findMany({
       where,
@@ -32,7 +43,16 @@ export async function GET(req: NextRequest) {
       include: {
         subcategories: withSubs
           ? {
-              where: { isActive: true },
+              where:
+                scope === 'dashboard' && authUser && (isSupplier(authUser) || isAdmin(authUser))
+                  ? {
+                      isActive: true,
+                      OR: [
+                        { approvalStatus: 'APPROVED' },
+                        { createdById: authUser.userId },
+                      ],
+                    }
+                  : { isActive: true, approvalStatus: 'APPROVED' },
               orderBy: { name: 'asc' },
               include: { _count: { select: { products: true } } },
             }
@@ -49,14 +69,31 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req)
+    const authUser = await requireAuth(req)
     const body = await req.json()
     const data = createCategorySchema.parse(body)
+    const userIsAdmin = isAdmin(authUser)
+    const userIsSupplier = isSupplier(authUser)
+
+    if (!userIsAdmin && !userIsSupplier) {
+      throw new ApiError(403, 'Only admin or suppliers can create categories')
+    }
 
     if (data.parentId) {
-      const category = await prisma.category.findUnique({ where: { id: data.parentId }, select: { id: true } })
+      const category = await prisma.category.findUnique({
+        where: { id: data.parentId },
+        select: { id: true, createdById: true, source: true },
+      })
       if (!category) {
         return successResponse(null, 'Parent category not found', undefined, 404)
+      }
+
+      if (!userIsAdmin && category.source === 'ADMIN') {
+        throw new ApiError(403, 'Supplier cannot modify admin-created categories')
+      }
+
+      if (!userIsAdmin && category.createdById && category.createdById !== authUser.userId) {
+        throw new ApiError(403, 'You can only add sub-categories to your own categories')
       }
 
       const slug = data.slug
@@ -73,6 +110,11 @@ export async function POST(req: NextRequest) {
           slug,
           description: data.description,
           isActive: true,
+          source: userIsAdmin ? 'ADMIN' : 'SUPPLIER',
+          approvalStatus: userIsAdmin ? 'APPROVED' : 'PENDING',
+          createdById: authUser.userId,
+          approvedById: userIsAdmin ? authUser.userId : null,
+          approvedAt: userIsAdmin ? new Date() : null,
         },
       })
 
@@ -94,11 +136,21 @@ export async function POST(req: NextRequest) {
         icon: data.icon,
         image: data.image,
         sortOrder: data.sortOrder,
+        approvalStatus: userIsAdmin ? 'APPROVED' : 'PENDING',
+        source: userIsAdmin ? 'ADMIN' : 'SUPPLIER',
+        createdById: authUser.userId,
+        approvedById: userIsAdmin ? authUser.userId : null,
+        approvedAt: userIsAdmin ? new Date() : null,
         seoTitle: data.seoTitle,
         seoDesc: data.seoDesc,
       },
     })
-    return successResponse(category, 'Category created', undefined, 201)
+    return successResponse(
+      category,
+      userIsAdmin ? 'Category created' : 'Category submitted for admin approval',
+      undefined,
+      201
+    )
   } catch (error) {
     return handleApiError(error)
   }

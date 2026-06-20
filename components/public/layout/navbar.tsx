@@ -6,33 +6,43 @@ import { usePathname, useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
   Bell,
+  BadgeCheck,
   ChevronDown,
+  Factory,
   Globe2,
+  House,
   LayoutDashboard,
   Loader2,
   LogOut,
   MapPin,
   Menu,
+  ReceiptText,
   Search,
+  ShieldCheck,
+  ShoppingBag,
   User,
   X,
 } from 'lucide-react'
 import { COUNTRIES, type CountryOption } from '@/lib/constants/countries'
+import { useCurrency } from '@/lib/currency/client'
 import { VisualSearchModal } from '@/components/public/home/visual-search-modal'
-import { SUPPORTED_LANGUAGES, useLanguage } from '@/lib/i18n'
+import { useLanguage } from '@/lib/i18n'
 import { get, patch, post } from '@/lib/utils/api-client'
 import { useAuthStore, useIsAdmin, useIsAuthenticated, useIsBuyer, useIsSupplier } from '@/store/auth'
 
 const MARKETPLACE_LINKS = [
   { href: '/products', label: 'All categories', icon: Menu },
-  { href: '/companies?verified=true', label: 'Verified manufacturers' },
-  { href: '/pricing', label: 'Trade Assurance' },
+  { href: '/', label: 'Home', icon: House },
+  { href: '/companies?verified=true', label: 'Verified manufacturers', icon: BadgeCheck },
+  { href: '/pricing', label: 'Trade Assurance', icon: ShieldCheck },
 ]
 
 const UTILITY_LINKS = [
-  { href: '/companies', label: 'Buyer Central' },
-  { href: '/pricing', label: 'Trade Services' },
+  { href: '/companies', label: 'Buyer Central', icon: ShoppingBag },
+  { href: '/auth/register?role=SUPPLIER_OWNER', label: 'Become a Supplier', icon: Factory },
 ]
+
+const TRADE_SERVICES_LINK = { href: '/pricing', label: 'Trade Services', icon: ReceiptText }
 
 type NavbarCategory = {
   id: string
@@ -50,13 +60,6 @@ type NavbarCategory = {
     _count?: { products: number }
   }>
 }
-
-const CURRENCIES = [
-  'USD', 'EUR', 'GBP', 'BDT', 'AED', 'CNY', 'INR', 'JPY', 'AUD', 'CAD', 'CHF', 'SEK', 'NOK', 'DKK',
-  'NZD', 'SGD', 'HKD', 'MYR', 'THB', 'IDR', 'PHP', 'KRW', 'PKR', 'LKR', 'SAR', 'QAR', 'KWD', 'OMR',
-  'BHD', 'TRY', 'RUB', 'UAH', 'PLN', 'CZK', 'HUF', 'RON', 'ZAR', 'EGP', 'NGN', 'KES', 'MAD', 'BRL',
-  'MXN', 'ARS', 'CLP', 'COP', 'PEN', 'VND', 'TWD',
-] as const
 
 const LANGUAGE_LABELS: Record<string, string> = {
   en: 'English',
@@ -96,7 +99,6 @@ export function Navbar() {
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
   const [mobileCategoryId, setMobileCategoryId] = useState<string | null>(null)
   const [deliveryCountryCode, setDeliveryCountryCode] = useState<CountryOption['code']>('BD')
-  const [currency, setCurrency] = useState<(typeof CURRENCIES)[number]>('USD')
   const [notifications, setNotifications] = useState<Array<{
     id: string
     title: string
@@ -113,7 +115,9 @@ export function Navbar() {
   const { user, clearAuth, refreshToken } = useAuthStore()
   const router = useRouter()
   const pathname = usePathname()
-  const { t, language, setLanguage } = useLanguage()
+  const { t, language, setLanguage, availableLanguages } = useLanguage()
+  const { currencies, selectedCurrency: currency, setSelectedCurrency: setCurrency } = useCurrency()
+  const isHomePage = pathname === '/'
 
   const dashboardPath = isAdmin ? '/admin' : isSupplier ? '/dashboard' : '/buyer'
   const selectedCountry = COUNTRIES.find((country) => country.code === deliveryCountryCode) || COUNTRIES.find((country) => country.code === 'BD') || COUNTRIES[0]
@@ -128,11 +132,34 @@ export function Navbar() {
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem('kgt-delivery-country') : null
     if (saved && COUNTRIES.some((country) => country.code === saved)) {
       setDeliveryCountryCode(saved as CountryOption['code'])
+      return
     }
 
-    const savedCurrency = typeof window !== 'undefined' ? window.localStorage.getItem('kgt-currency') : null
-    if (savedCurrency && CURRENCIES.includes(savedCurrency as (typeof CURRENCIES)[number])) {
-      setCurrency(savedCurrency as (typeof CURRENCIES)[number])
+    let active = true
+
+    fetch('/api/location-context', {
+      method: 'GET',
+      cache: 'no-store',
+    })
+      .then(async (response) => {
+        if (!response.ok) return null
+        return response.json() as Promise<{ data?: { countryCode?: string } }>
+      })
+      .then((payload) => {
+        const detectedCode = payload?.data?.countryCode
+        if (!active || !detectedCode) return
+        if (!COUNTRIES.some((country) => country.code === detectedCode)) return
+        setDeliveryCountryCode(detectedCode as CountryOption['code'])
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('kgt-delivery-country', detectedCode)
+        }
+      })
+      .catch(() => {
+        // fall back to default country silently
+      })
+
+    return () => {
+      active = false
     }
   }, [])
 
@@ -162,6 +189,11 @@ export function Navbar() {
   }, [isAuth, notificationsOpen])
 
   useEffect(() => {
+    if (!isHomePage) {
+      setShowStickySearch(true)
+      return
+    }
+
     function updateStickySearchVisibility() {
       const discovery = document.getElementById('marketplace-discovery')
       if (!discovery) {
@@ -181,7 +213,7 @@ export function Navbar() {
       window.removeEventListener('scroll', updateStickySearchVisibility)
       window.removeEventListener('resize', updateStickySearchVisibility)
     }
-  }, [pathname])
+  }, [isHomePage, pathname])
 
   useEffect(() => {
     if ((!categoriesOpen && !mobileOpen) || categories.length) return
@@ -215,13 +247,6 @@ export function Navbar() {
     setDeliveryCountryCode(code)
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('kgt-delivery-country', code)
-    }
-  }
-
-  function updateCurrency(nextCurrency: (typeof CURRENCIES)[number]) {
-    setCurrency(nextCurrency)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('kgt-currency', nextCurrency)
     }
   }
 
@@ -296,8 +321,10 @@ export function Navbar() {
             <LocaleSelector
               language={language}
               setLanguage={setLanguage}
+              availableLanguages={availableLanguages}
               currency={currency}
-              setCurrency={updateCurrency}
+              setCurrency={setCurrency}
+              currencies={currencies.map((item) => item.code)}
             />
 
             <HeaderAuth
@@ -341,11 +368,18 @@ export function Navbar() {
                 </Link>
               )
             )}
-            {UTILITY_LINKS.map((link) => (
-              <Link key={link.label} href={link.href} className="whitespace-nowrap transition hover:text-orange-600">
-                {link.label}
+          </div>
+          <div className="justify-self-end flex items-center gap-6 text-[15px] font-medium text-slate-700">
+            {UTILITY_LINKS.map(({ href, label, icon: Icon }) => (
+              <Link key={label} href={href} className="inline-flex items-center gap-2 whitespace-nowrap transition hover:text-orange-600">
+                {Icon ? <Icon className="h-4 w-4" /> : null}
+                <span>{label}</span>
               </Link>
             ))}
+            <Link href={TRADE_SERVICES_LINK.href} className="inline-flex items-center gap-2 whitespace-nowrap transition hover:text-orange-600">
+              <TRADE_SERVICES_LINK.icon className="h-4 w-4" />
+              <span>{TRADE_SERVICES_LINK.label}</span>
+            </Link>
           </div>
         </div>
 
@@ -383,8 +417,10 @@ export function Navbar() {
                 compact
                 language={language}
                 setLanguage={setLanguage}
+                availableLanguages={availableLanguages}
                 currency={currency}
-                setCurrency={updateCurrency}
+                setCurrency={setCurrency}
+                currencies={currencies.map((item) => item.code)}
               />
               <HeaderAuth
                 isAuth={isAuth}
@@ -428,11 +464,16 @@ export function Navbar() {
                 </Link>
               )
             )}
-            {UTILITY_LINKS.map((link) => (
-              <Link key={link.label} href={link.href} className="whitespace-nowrap transition hover:text-orange-600">
-                {link.label}
+            {UTILITY_LINKS.map(({ href, label, icon: Icon }) => (
+              <Link key={label} href={href} className="inline-flex items-center gap-2 whitespace-nowrap transition hover:text-orange-600">
+                {Icon ? <Icon className="h-4 w-4" /> : null}
+                <span>{label}</span>
               </Link>
             ))}
+            <Link href={TRADE_SERVICES_LINK.href} className="lg:ml-auto inline-flex items-center gap-2 whitespace-nowrap transition hover:text-orange-600">
+              <TRADE_SERVICES_LINK.icon className="h-4 w-4" />
+              <span>{TRADE_SERVICES_LINK.label}</span>
+            </Link>
           </div>
 
         </div>
@@ -460,8 +501,10 @@ export function Navbar() {
                 mobile
                 language={language}
                 setLanguage={setLanguage}
+                availableLanguages={availableLanguages}
                 currency={currency}
-                setCurrency={updateCurrency}
+                setCurrency={setCurrency}
+                currencies={currencies.map((item) => item.code)}
               />
             </div>
 
@@ -497,11 +540,16 @@ export function Navbar() {
                   {link.label}
                 </Link>
               ))}
-              {UTILITY_LINKS.map((link) => (
-                <Link key={link.label} href={link.href} onClick={() => setMobileOpen(false)} className="rounded-xl px-3 py-2 hover:bg-orange-50">
-                  {link.label}
+              {UTILITY_LINKS.map(({ href, label, icon: Icon }) => (
+                <Link key={label} href={href} onClick={() => setMobileOpen(false)} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-orange-50">
+                  {Icon ? <Icon className="h-4 w-4" /> : null}
+                  <span>{label}</span>
                 </Link>
               ))}
+              <Link href={TRADE_SERVICES_LINK.href} onClick={() => setMobileOpen(false)} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-orange-50">
+                <TRADE_SERVICES_LINK.icon className="h-4 w-4" />
+                <span>{TRADE_SERVICES_LINK.label}</span>
+              </Link>
             </div>
 
             <div className="rounded-[28px] border border-orange-100/80 bg-[linear-gradient(180deg,rgba(255,250,246,0.96)_0%,rgba(255,255,255,0.98)_100%)] p-3 shadow-[0_24px_60px_-42px_rgba(249,115,22,0.45)]">
@@ -874,15 +922,19 @@ function LocaleSelector({
   mobile = false,
   language,
   setLanguage,
+  availableLanguages,
   currency,
   setCurrency,
+  currencies,
 }: {
   compact?: boolean
   mobile?: boolean
-  language: (typeof SUPPORTED_LANGUAGES)[number]
-  setLanguage: (language: (typeof SUPPORTED_LANGUAGES)[number]) => void
-  currency: (typeof CURRENCIES)[number]
-  setCurrency: (currency: (typeof CURRENCIES)[number]) => void
+  language: string
+  setLanguage: (language: string) => void
+  availableLanguages: Array<{ code: string; name: string; nativeName?: string | null }>
+  currency: string
+  setCurrency: (currency: string) => void
+  currencies: string[]
 }) {
   const [open, setOpen] = useState(false)
   const [languageSearch, setLanguageSearch] = useState('')
@@ -890,17 +942,18 @@ function LocaleSelector({
 
   const filteredLanguages = useMemo(() => {
     const query = languageSearch.trim().toLowerCase()
-    if (!query) return SUPPORTED_LANGUAGES
-    return SUPPORTED_LANGUAGES.filter((item) =>
-      (LANGUAGE_LABELS[item] || item).toLowerCase().includes(query) || item.toLowerCase().includes(query)
+    if (!query) return availableLanguages
+    return availableLanguages.filter((item) =>
+      (LANGUAGE_LABELS[item.code] || item.nativeName || item.name || item.code).toLowerCase().includes(query)
+      || item.code.toLowerCase().includes(query)
     )
-  }, [languageSearch])
+  }, [availableLanguages, languageSearch])
 
   const filteredCurrencies = useMemo(() => {
     const query = currencySearch.trim().toLowerCase()
-    if (!query) return CURRENCIES
-    return CURRENCIES.filter((item) => item.toLowerCase().includes(query))
-  }, [currencySearch])
+    if (!query) return currencies
+    return currencies.filter((item) => item.toLowerCase().includes(query))
+  }, [currencies, currencySearch])
 
   return (
     <div className={`relative ${mobile ? 'w-auto min-w-[180px]' : ''}`}>
@@ -910,7 +963,7 @@ function LocaleSelector({
         className={`flex items-center gap-2 rounded-full border border-orange-100 bg-white text-slate-600 shadow-sm transition hover:border-orange-200 ${mobile ? 'px-3 py-2' : compact ? 'px-3 py-2' : 'px-4 py-2'}`}
       >
         <Globe2 className="h-4 w-4 flex-shrink-0" />
-        <span className={`${mobile || compact ? 'text-sm' : 'text-sm font-medium'}`}>{LANGUAGE_LABELS[language] || language.toUpperCase()}</span>
+        <span className={`${mobile || compact ? 'text-sm' : 'text-sm font-medium'}`}>{LANGUAGE_LABELS[language] || availableLanguages.find((item) => item.code === language)?.nativeName || language.toUpperCase()}</span>
         <span className="text-slate-300">|</span>
         <span className={`${mobile || compact ? 'text-sm' : 'text-sm font-medium'}`}>{currency}</span>
         <ChevronDown className={`h-4 w-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
@@ -931,13 +984,13 @@ function LocaleSelector({
               <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-100 p-1">
                 {filteredLanguages.map((item) => (
                   <button
-                    key={item}
+                    key={item.code}
                     type="button"
-                    onClick={() => setLanguage(item)}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition hover:bg-orange-50 ${language === item ? 'bg-orange-50 text-orange-700' : 'text-slate-700'}`}
+                    onClick={() => setLanguage(item.code)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition hover:bg-orange-50 ${language === item.code ? 'bg-orange-50 text-orange-700' : 'text-slate-700'}`}
                   >
-                    <span>{LANGUAGE_LABELS[item] || item.toUpperCase()}</span>
-                    <span className="text-xs text-slate-400">{item.toUpperCase()}</span>
+                    <span>{LANGUAGE_LABELS[item.code] || item.nativeName || item.name || item.code.toUpperCase()}</span>
+                    <span className="text-xs text-slate-400">{item.code.toUpperCase()}</span>
                   </button>
                 ))}
                 {!filteredLanguages.length ? <div className="px-3 py-4 text-sm text-slate-500">No language found.</div> : null}

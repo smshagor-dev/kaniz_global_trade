@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
+import { CurrencyAmount } from '@/components/currency/currency-amount'
 
 interface TradeOrder {
   id: string
@@ -92,7 +93,7 @@ export default function BuyerTradeOrdersPage() {
               <div>
                 <h2 className="font-bold text-gray-900">{order.productName}</h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  {order.currencyCode} {Number(order.totalAmount).toLocaleString()} | Order: {order.status} | Escrow: {order.escrowAccount?.status || 'N/A'}
+                  <CurrencyAmount amount={order.totalAmount} currencyCode={order.currencyCode} showCode /> | Order: {order.status} | Escrow: {order.escrowAccount?.status || 'N/A'}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

@@ -9,7 +9,7 @@ import { post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import {
   LayoutDashboard, Building2, Package, Globe, Shield,
-  Flag, LogOut, Globe2, ChevronRight, ChevronDown, CheckSquare, ClipboardCheck, BadgeCheck, Settings,
+  Flag, LogOut, Globe2, ChevronRight, ChevronDown, CheckSquare, ClipboardCheck, BadgeCheck, Settings, KeyRound,
 } from 'lucide-react'
 
 type NavItem = {
@@ -32,6 +32,7 @@ const navGroups = [
       { href: '/admin/buyer-verifications', icon: Shield,      label: 'Buyer Verification' },
       { href: '/admin/kyc',                 icon: BadgeCheck,  label: 'KYC Reviews' },
       { href: '/admin/fraud-alerts',        icon: Flag,        label: 'Fraud Alerts' },
+      { href: '/admin/roles',               icon: KeyRound,    label: 'Roles & Permissions' },
     ],
   },
   {
@@ -68,8 +69,11 @@ const navGroups = [
         label: 'Settings',
         children: [
           { href: '/admin/settings/payment', label: 'Payment' },
+          { href: '/admin/settings/currency', label: 'Currency' },
+          { href: '/admin/settings/language', label: 'Language' },
           { href: '/admin/settings/shipping', label: 'Shipping' },
           { href: '/admin/settings/partners', label: 'Partners' },
+          { href: '/admin/settings/social', label: 'Social Login' },
           { href: '/admin/settings/email', label: 'Email' },
           { href: '/admin/settings/storage', label: 'Storage' },
         ],

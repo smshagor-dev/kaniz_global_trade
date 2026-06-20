@@ -7,15 +7,17 @@ import { useIsAuthenticated, useIsSupplier, useIsAdmin, useCurrentUser, useAuthS
 import { post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { CurrencySelector } from '@/components/currency/currency-selector'
 import {
   LayoutDashboard, Building2, Package, MessageSquare, FileText,
   Quote, Users, CreditCard, BarChart3, Bell, Settings,
-  LogOut, Globe2, Shield, ChevronRight, ShoppingBag, Truck, PackageCheck, Clapperboard, ClipboardCheck, Megaphone, Landmark, BadgeDollarSign,
+  LogOut, Globe2, Shield, ChevronRight, ShoppingBag, Truck, PackageCheck, Clapperboard, ClipboardCheck, Megaphone, Landmark, BadgeDollarSign, FolderTree,
 } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Overview' },
   { href: '/dashboard/company',      icon: Building2,       label: 'Company Profile' },
+  { href: '/dashboard/categories',   icon: FolderTree,      label: 'Categories' },
   { href: '/dashboard/products',     icon: Package,         label: 'Products' },
   { href: '/dashboard/inquiries',    icon: MessageSquare,   label: 'Inquiries' },
   { href: '/dashboard/rfqs',         icon: FileText,        label: 'RFQs' },
@@ -132,6 +134,7 @@ export default function SupplierDashboardLayout({ children }: { children: React.
           </div>
           <div className="flex items-center gap-3">
             <LanguageSwitcher compact />
+            <CurrencySelector compact />
             <Link href="/" className="text-xs text-gray-500 hover:text-blue-700 flex items-center gap-1">
               <ShoppingBag className="w-3.5 h-3.5" /> View Marketplace
             </Link>

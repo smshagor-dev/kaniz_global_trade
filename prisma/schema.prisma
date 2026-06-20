@@ -230,6 +230,11 @@ enum InsuranceStatus {
   CANCELLED
 }
 
+enum PartnerType {
+  FINANCING
+  INSURANCE
+}
+
 enum InsuranceClaimStatus {
   OPEN
   UNDER_REVIEW
@@ -290,6 +295,17 @@ enum BlogStatus {
   ARCHIVED
 }
 
+enum CategoryApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CategorySource {
+  ADMIN
+  SUPPLIER
+}
+
 enum ReportStatus {
   PENDING
   REVIEWED
@@ -319,6 +335,8 @@ enum AuditAction {
 model User {
   id               String     @id @default(uuid())
   email            String     @unique
+  googleId         String?    @unique
+  facebookId       String?    @unique
   emailVerified    DateTime?
   password         String
   firstName        String
@@ -371,6 +389,10 @@ model User {
   insuranceClaims   InsuranceClaim[]        @relation("BuyerInsuranceClaims")
   contactMessages   ContactMessage[]
   newsletterSub     NewsletterSubscriber?
+  categoriesCreated Category[]              @relation("CategoryCreatedBy")
+  categoriesApproved Category[]             @relation("CategoryApprovedBy")
+  subcategoriesCreated SubCategory[]        @relation("SubCategoryCreatedBy")
+  subcategoriesApproved SubCategory[]       @relation("SubCategoryApprovedBy")
 
   @@index([email])
   @@index([status])
@@ -968,20 +990,30 @@ model Category {
   parentId    String?
   sortOrder   Int      @default(0)
   isActive    Boolean  @default(true)
+  approvalStatus CategoryApprovalStatus @default(APPROVED)
+  source      CategorySource @default(ADMIN)
+  createdById String?
+  approvedById String?
+  approvedAt  DateTime?
+  rejectedReason String? @db.Text
   seoTitle    String?
   seoDesc     String?  @db.Text
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  parent        Category?     @relation("CategoryTree", fields: [parentId], references: [id])
-  children      Category[]    @relation("CategoryTree")
-  subcategories SubCategory[]
-  products      Product[]
-  rfqs          RFQ[]
+    parent        Category?     @relation("CategoryTree", fields: [parentId], references: [id])
+    children      Category[]    @relation("CategoryTree")
+    createdBy     User?         @relation("CategoryCreatedBy", fields: [createdById], references: [id])
+    approvedBy    User?         @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
+    subcategories SubCategory[]
+    products      Product[]
+    rfqs          RFQ[]
 
-  @@index([slug])
-  @@index([parentId])
-}
+    @@index([slug])
+    @@index([parentId])
+    @@index([approvalStatus])
+    @@index([createdById])
+  }
 
 model SubCategory {
   id          String   @id @default(uuid())
@@ -990,12 +1022,22 @@ model SubCategory {
   slug        String   @unique
   description String?  @db.Text
   isActive    Boolean  @default(true)
+  approvalStatus CategoryApprovalStatus @default(APPROVED)
+  source      CategorySource @default(ADMIN)
+  createdById String?
+  approvedById String?
+  approvedAt  DateTime?
+  rejectedReason String? @db.Text
   createdAt   DateTime @default(now())
 
-  category Category  @relation(fields: [categoryId], references: [id])
-  products Product[]
+  category   Category  @relation(fields: [categoryId], references: [id])
+  createdBy  User?     @relation("SubCategoryCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?     @relation("SubCategoryApprovedBy", fields: [approvedById], references: [id])
+  products   Product[]
 
   @@index([categoryId])
+  @@index([approvalStatus])
+  @@index([createdById])
 }
 
 model Country {
@@ -1962,6 +2004,7 @@ model FinancingRequest {
   companyId       String
   requesterUserId String
   tradeOrderId    String?
+  partnerId       String?
   amount          Decimal         @db.Decimal(15, 2)
   currencyCode    String          @default("USD")
   purpose         String
@@ -1977,12 +2020,14 @@ model FinancingRequest {
   reviewedAt      DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
-
+  
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   requester User    @relation(fields: [requesterUserId], references: [id], onDelete: Cascade)
-
+  partner   ServicePartner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  
   @@index([companyId])
   @@index([requesterUserId])
+  @@index([partnerId])
   @@index([status])
 }
 
@@ -2028,6 +2073,7 @@ model InsurancePolicy {
   buyerId          String
   tradeOrderId     String?
   sampleOrderId    String?
+  partnerId        String?
   providerName     String
   policyType       String
   policyNumber     String?         @unique
@@ -2048,12 +2094,14 @@ model InsurancePolicy {
   buyer       User         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   tradeOrder  TradeOrder?  @relation(fields: [tradeOrderId], references: [id], onDelete: SetNull)
   sampleOrder SampleOrder? @relation(fields: [sampleOrderId], references: [id], onDelete: SetNull)
+  partner     ServicePartner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
   claims      InsuranceClaim[]
 
   @@index([companyId])
   @@index([buyerId])
   @@index([tradeOrderId])
   @@index([sampleOrderId])
+  @@index([partnerId])
   @@index([status])
 }
 
@@ -2268,6 +2316,67 @@ model SystemSetting {
 
   @@index([key])
   @@index([group])
+}
+
+model AppLanguage {
+  id                  String           @id @default(uuid())
+  code                String           @unique
+  name                String
+  nativeName          String?
+  isDefault           Boolean          @default(false)
+  isActive            Boolean          @default(true)
+  isRtl               Boolean          @default(false)
+  autoTranslateReady  Boolean          @default(false)
+  lastTranslatedAt    DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  translations        AppTranslation[]
+
+  @@index([code])
+  @@index([isActive])
+}
+
+model AppTranslation {
+  id               String      @id @default(uuid())
+  languageId       String
+  translationKey   String
+  value            String      @db.LongText
+  isAutoTranslated Boolean     @default(false)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  language         AppLanguage @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@unique([languageId, translationKey])
+  @@index([translationKey])
+  @@index([languageId])
+}
+
+model ServicePartner {
+  id                String      @id @default(uuid())
+  type              PartnerType
+  code              String      @unique
+  name              String
+  slug              String      @unique
+  description       String?     @db.Text
+  website           String?
+  contactEmail      String?
+  apiBaseUrl        String?
+  apiKey            String?     @db.Text
+  apiSecret         String?     @db.Text
+  accessToken       String?     @db.Text
+  metadata          String?     @db.LongText
+  isDefault         Boolean     @default(false)
+  isActive          Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  financingRequests FinancingRequest[]
+  insurancePolicies InsurancePolicy[]
+
+  @@index([type])
+  @@index([isActive])
 }
 
 model SeoMeta {

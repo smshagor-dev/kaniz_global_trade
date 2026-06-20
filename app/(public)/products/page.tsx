@@ -26,7 +26,19 @@ async function getProducts(params: Record<string, string>) {
   const limit = 16
   const skip = (page - 1) * limit
 
-  const where: Record<string, unknown> = { status: 'APPROVED', deletedAt: null }
+  const where: Record<string, unknown> = {
+    status: 'APPROVED',
+    deletedAt: null,
+    category: { approvalStatus: 'APPROVED', isActive: true },
+    AND: [
+      {
+        OR: [
+          { subcategoryId: null },
+          { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
+        ],
+      },
+    ],
+  }
   if (params.categoryId) where.categoryId = params.categoryId
   if (params.subcategoryId) where.subcategoryId = params.subcategoryId
   if (params.companyId) where.companyId = params.companyId
@@ -69,10 +81,10 @@ async function getProducts(params: Record<string, string>) {
     }),
     prisma.product.count({ where }),
     prisma.category.findMany({
-      where: { isActive: true },
+      where: { isActive: true, approvalStatus: 'APPROVED' },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: {
-        subcategories: { where: { isActive: true }, orderBy: { name: 'asc' } },
+        subcategories: { where: { isActive: true, approvalStatus: 'APPROVED' }, orderBy: { name: 'asc' } },
         _count: { select: { products: { where: { status: 'APPROVED', deletedAt: null } } } },
       },
     }),
@@ -87,7 +99,7 @@ export default async function ProductsPage({ searchParams }: Props) {
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       <div className="grid gap-8 lg:grid-cols-[290px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <div className="rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm">

@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { get } from '@/lib/utils/api-client'
+import { CurrencyAmount } from '@/components/currency/currency-amount'
 import {
   Bar,
   BarChart,
@@ -65,7 +66,7 @@ export default function DashboardQuotationsPage() {
               { label: 'Total Quotations', value: summary.total, icon: FileSignature, tone: 'bg-sky-50 text-sky-700' },
               { label: 'Sent', value: summary.sent, icon: Send, tone: 'bg-amber-50 text-amber-700' },
               { label: 'Accepted', value: summary.accepted, icon: TimerReset, tone: 'bg-emerald-50 text-emerald-700' },
-              { label: 'Quoted Value', value: `$${summary.totalValue.toLocaleString()}`, icon: BadgeDollarSign, tone: 'bg-violet-50 text-violet-700' },
+              { label: 'Quoted Value', value: <CurrencyAmount amount={summary.totalValue} currencyCode="USD" />, icon: BadgeDollarSign, tone: 'bg-violet-50 text-violet-700' },
             ].map((item) => (
               <div key={item.label} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
                 <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${item.tone}`}>
@@ -121,9 +122,7 @@ export default function DashboardQuotationsPage() {
                       </span>
                     </div>
                     <div className="mt-3 flex items-center justify-between text-sm">
-                      <p className="font-semibold text-gray-900">
-                        {quotation.currencyCode} {Number(quotation.totalPrice).toLocaleString()}
-                      </p>
+                      <p className="font-semibold text-gray-900"><CurrencyAmount amount={quotation.totalPrice} currencyCode={quotation.currencyCode} showCode /></p>
                       <p className="text-gray-500">
                         {quotation.validUntil ? `Valid until ${new Date(quotation.validUntil).toLocaleDateString()}` : new Date(quotation.createdAt).toLocaleDateString()}
                       </p>

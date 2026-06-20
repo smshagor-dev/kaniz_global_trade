@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { CheckCircle2, MapPin } from 'lucide-react'
+import { CurrencyRange } from '@/components/currency/currency-range'
 
 type CatalogCardProduct = {
   id: string
@@ -32,17 +33,6 @@ function formatNumber(value?: number | string | { toString(): string } | null) {
   const numeric = Number(value.toString())
   if (Number.isNaN(numeric)) return String(value)
   return numeric.toLocaleString()
-}
-
-function formatPrice(product: CatalogCardProduct) {
-  const min = formatNumber(product.priceMin)
-  const max = formatNumber(product.priceMax)
-  const symbol = product.currency?.symbol || '$'
-
-  if (min && max && min !== max) return `${symbol}${min} - ${symbol}${max}`
-  if (min) return `${symbol}${min}`
-  if (max) return `${symbol}${max}`
-  return 'Price on request'
 }
 
 export function CatalogCard({ product }: CatalogCardProps) {
@@ -82,7 +72,9 @@ export function CatalogCard({ product }: CatalogCardProps) {
         </div>
 
         <div className="rounded-2xl bg-gray-50 p-3">
-          <p className="text-lg font-black text-gray-950">{formatPrice(product)}</p>
+          <p className="text-lg font-black text-gray-950">
+            <CurrencyRange minAmount={product.priceMin} maxAmount={product.priceMax} currencyCode={product.currency?.code} />
+          </p>
           <p className="mt-1 text-xs text-gray-500">
             {moq ? `MOQ: ${moq} ${product.moqUnit || 'units'}` : 'MOQ available on request'}
           </p>

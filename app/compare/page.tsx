@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
+import { CurrencyRange } from '@/components/currency/currency-range'
+import type { ReactNode } from 'react'
 
 interface Props {
   searchParams: Promise<{ ids?: string }>
@@ -56,30 +58,30 @@ export default async function ComparePage({ searchParams }: Props) {
             </thead>
             <tbody>
               {[
-                ['Category', (product: (typeof products)[number]) => product.category.name],
-                ['Supplier', (product: (typeof products)[number]) => product.company.name],
+                ['Category', (product: (typeof products)[number]) => <>{product.category.name}</>],
+                ['Supplier', (product: (typeof products)[number]) => <>{product.company.name}</>],
                 [
                   'Price',
                   (product: (typeof products)[number]) =>
                     product.priceMin
-                      ? `${product.currency?.symbol || '$'}${Number(product.priceMin).toLocaleString()}${product.priceMax ? ` - ${product.currency?.symbol || '$'}${Number(product.priceMax).toLocaleString()}` : ''}`
-                      : 'Negotiable',
+                      ? <CurrencyRange minAmount={product.priceMin} maxAmount={product.priceMax} currencyCode={product.currency?.code} fallback="Negotiable" />
+                      : <>Negotiable</>,
                 ],
-                ['MOQ', (product: (typeof products)[number]) => (product.moq ? `${Number(product.moq).toLocaleString()} ${product.moqUnit || ''}` : '-')],
-                ['Lead Time', (product: (typeof products)[number]) => product.leadTime || '-'],
-                ['Packaging', (product: (typeof products)[number]) => product.packagingDetails || '-'],
+                ['MOQ', (product: (typeof products)[number]) => <>{product.moq ? `${Number(product.moq).toLocaleString()} ${product.moqUnit || ''}` : '-'}</>],
+                ['Lead Time', (product: (typeof products)[number]) => <>{product.leadTime || '-'}</>],
+                ['Packaging', (product: (typeof products)[number]) => <>{product.packagingDetails || '-'}</>],
                 [
                   'Certifications',
                   (product: (typeof products)[number]) =>
-                    product.certificates.length ? product.certificates.map((cert) => cert.name).join(', ') : '-',
+                    <>{product.certificates.length ? product.certificates.map((cert) => cert.name).join(', ') : '-'}</>,
                 ],
-                ['Supplier Verification', (product: (typeof products)[number]) => product.company.verificationStatus.replace(/_/g, ' ')],
+                ['Supplier Verification', (product: (typeof products)[number]) => <>{product.company.verificationStatus.replace(/_/g, ' ')}</>],
               ].map(([label, getter]) => (
                 <tr key={label as string} className="border-t border-gray-100 align-top">
                   <td className="px-4 py-3 font-medium text-gray-700">{label as string}</td>
                   {products.map((product) => (
                     <td key={`${product.id}-${label as string}`} className="px-4 py-3 text-gray-600">
-                      {(getter as (product: (typeof products)[number]) => string)(product)}
+                      {(getter as (product: (typeof products)[number]) => ReactNode)(product)}
                     </td>
                   ))}
                 </tr>

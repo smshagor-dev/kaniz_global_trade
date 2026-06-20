@@ -1,47 +1,53 @@
-const DEMO_TRANSLATIONS: Record<string, Record<string, string>> = {
-  ar: {
-    hello: 'مرحبا',
-    price: 'السعر',
-    shipment: 'الشحنة',
-    sample: 'عينة',
-  },
-  es: {
-    hello: 'Hola',
-    price: 'Precio',
-    shipment: 'Envío',
-    sample: 'Muestra',
-  },
-  pt: {
-    hello: 'Olá',
-    price: 'Preço',
-    shipment: 'Remessa',
-    sample: 'Amostra',
-  },
-  zh: {
-    hello: '你好',
-    price: '价格',
-    shipment: '货运',
-    sample: '样品',
-  },
-  nl: {
-    hello: 'Hallo',
-    price: 'Prijs',
-    shipment: 'Zending',
-    sample: 'Monster',
-  },
+const GOOGLE_TRANSLATE_API_URL = 'https://translate.googleapis.com/translate_a/single'
+
+function flattenGoogleTranslatePayload(payload: unknown): string {
+  if (!Array.isArray(payload) || !Array.isArray(payload[0])) return ''
+  return (payload[0] as Array<unknown>)
+    .map((segment) => (Array.isArray(segment) ? String(segment[0] || '') : ''))
+    .join('')
+    .trim()
 }
 
-export async function translateText(text: string, targetLanguage: string) {
-  const dictionary = DEMO_TRANSLATIONS[targetLanguage] || {}
-  let translated = text
+export async function translateText(text: string, targetLanguage: string, sourceLanguage = 'auto') {
+  const url = new URL(GOOGLE_TRANSLATE_API_URL)
+  url.searchParams.set('client', 'gtx')
+  url.searchParams.set('sl', sourceLanguage)
+  url.searchParams.set('tl', targetLanguage)
+  url.searchParams.set('dt', 't')
+  url.searchParams.set('q', text)
 
-  Object.entries(dictionary).forEach(([from, to]) => {
-    translated = translated.replace(new RegExp(from, 'gi'), to)
-  })
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json,text/plain,*/*',
+      },
+    })
 
-  return {
-    translatedText: translated,
-    provider: 'local-dictionary',
-    targetLanguage,
+    if (!response.ok) {
+      throw new Error(`Google Translate request failed with status ${response.status}`)
+    }
+
+    const payload = await response.json()
+    const translatedText = flattenGoogleTranslatePayload(payload)
+
+    if (!translatedText) {
+      throw new Error('Google Translate returned an empty payload')
+    }
+
+    return {
+      translatedText,
+      provider: 'google-translate',
+      targetLanguage,
+      sourceLanguage,
+    }
+  } catch {
+    return {
+      translatedText: text,
+      provider: 'fallback-original',
+      targetLanguage,
+      sourceLanguage,
+    }
   }
 }
