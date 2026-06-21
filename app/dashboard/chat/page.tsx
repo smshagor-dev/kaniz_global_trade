@@ -41,7 +41,7 @@ export default function ChatPage() {
   const [search, setSearch]           = useState('')
   const [translatingId, setTranslatingId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const typingTimeout  = useRef<NodeJS.Timeout>()
+  const typingTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Get chat rooms
   const { data: roomsData, refetch: refetchRooms } = useQuery({
@@ -136,7 +136,7 @@ export default function ChatPage() {
       setTyping(true)
       socket.emit('typing:start', { roomId: activeRoom })
     }
-    clearTimeout(typingTimeout.current)
+    if (typingTimeout.current) clearTimeout(typingTimeout.current)
     typingTimeout.current = setTimeout(() => {
       setTyping(false)
       socket!.emit('typing:stop', { roomId: activeRoom })
