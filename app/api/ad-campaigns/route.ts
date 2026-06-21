@@ -3,11 +3,12 @@ import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
+import { AD_PLACEMENTS, getAdvertisingSettings } from '@/lib/advertising/settings'
 
 const createSchema = z.object({
   productId: z.string().optional(),
   title: z.string().min(3),
-  placement: z.enum(['SEARCH_TOP', 'HOMEPAGE_HERO', 'HOMEPAGE_FEATURED', 'CATEGORY_SPOTLIGHT']),
+  placement: z.enum(AD_PLACEMENTS),
   budget: z.number().positive(),
   bidAmount: z.number().nonnegative().default(0),
   targetKeyword: z.string().optional(),
@@ -43,7 +44,46 @@ export async function POST(req: NextRequest) {
   try {
     const authUser = await requireAuth(req)
     if (!authUser.companyId) throw new ApiError(403, 'Supplier company required')
+    const advertisingSettings = await getAdvertisingSettings()
+    if (!advertisingSettings.enabled) throw new ApiError(403, 'Advertising is currently disabled by admin')
     const data = createSchema.parse(await req.json())
+
+    if (advertisingSettings.requireProductLink && !data.productId) {
+      throw new ApiError(422, 'A linked product is required for advertising campaigns')
+    }
+
+    if (!advertisingSettings.allowedPlacements.includes(data.placement)) {
+      throw new ApiError(422, 'This advertising placement is currently unavailable')
+    }
+
+    if (data.budget < advertisingSettings.minBudget || data.budget > advertisingSettings.maxBudget) {
+      throw new ApiError(422, `Budget must be between ${advertisingSettings.minBudget} and ${advertisingSettings.maxBudget}`)
+    }
+
+    if (data.bidAmount < advertisingSettings.minBid || data.bidAmount > advertisingSettings.maxBid) {
+      throw new ApiError(422, `Bid amount must be between ${advertisingSettings.minBid} and ${advertisingSettings.maxBid}`)
+    }
+
+    if (data.productId) {
+      const product = await prisma.product.findFirst({
+        where: {
+          id: data.productId,
+          companyId: authUser.companyId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+      if (!product) throw new ApiError(404, 'Linked product not found for this supplier')
+    }
+
+    const startsAt = new Date(data.startsAt)
+    const endsAt = new Date(data.endsAt)
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      throw new ApiError(422, 'Valid campaign dates are required')
+    }
+    if (endsAt <= startsAt) {
+      throw new ApiError(422, 'Campaign end date must be after the start date')
+    }
 
     const campaign = await prisma.adCampaign.create({
       data: {
@@ -55,13 +95,15 @@ export async function POST(req: NextRequest) {
         bidAmount: data.bidAmount,
         targetKeyword: data.targetKeyword,
         creativeUrl: data.creativeUrl,
-        startsAt: new Date(data.startsAt),
-        endsAt: new Date(data.endsAt),
-        status: 'PENDING_APPROVAL',
+        startsAt,
+        endsAt,
+        status: advertisingSettings.autoApprove ? 'ACTIVE' : 'PENDING_APPROVAL',
+        approvedAt: advertisingSettings.autoApprove ? new Date() : null,
+        approvedBy: advertisingSettings.autoApprove ? authUser.userId : null,
       },
     })
 
-    return successResponse(campaign, 'Ad campaign submitted', undefined, 201)
+    return successResponse(campaign, advertisingSettings.autoApprove ? 'Ad campaign created and activated' : 'Ad campaign submitted', undefined, 201)
   } catch (error) {
     return handleApiError(error)
   }

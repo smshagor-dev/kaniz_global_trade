@@ -368,6 +368,8 @@ model User {
   reviews           Review[]
   favoriteProducts  FavoriteProduct[]
   favoriteCompanies FavoriteCompany[]
+  searchHistories   UserSearchHistory[]
+  viewHistories     UserViewHistory[]
   auditLogs         AuditLog[]
   reports           Report[]                 @relation("ReportedBy")
   payments          Payment[]
@@ -397,6 +399,11 @@ model User {
   @@index([email])
   @@index([status])
   @@index([deletedAt])
+}
+
+enum UserViewEntityType {
+  PRODUCT
+  COMPANY
 }
 
 model Role {
@@ -562,6 +569,7 @@ model Company {
   reviews           Review[]             @relation("CompanyReviews")
   favoriteBy        FavoriteCompany[]
   analytics         CompanyAnalytic[]
+  viewHistories     UserViewHistory[]
   tradeOrders       TradeOrder[]         @relation("SupplierTradeOrders")
   sampleOrders      SampleOrder[]
   shipments         Shipment[]           @relation("SupplierShipments")
@@ -780,9 +788,12 @@ model Product {
   subcategoryId      String?
   name               String
   slug               String        @unique
+  tags               String?       @db.Text
   shortDescription   String?       @db.Text
   description        String?       @db.LongText
   sku                String?
+  barcode            String?
+  thumbnailUrl       String?
   hsCodeId           String?
   moq                Decimal?      @db.Decimal(15, 2)
   moqUnit            String?
@@ -796,6 +807,7 @@ model Product {
   packagingDetails   String?       @db.Text
   status             ProductStatus @default(DRAFT)
   isFeatured         Boolean       @default(false)
+  isTodaysDeal       Boolean       @default(false)
   isVerified         Boolean       @default(false)
   totalViews         Int           @default(0)
   totalInquiries     Int           @default(0)
@@ -804,6 +816,8 @@ model Product {
   rejectedReason     String?       @db.Text
   seoTitle           String?
   seoDescription     String?       @db.Text
+  seoKeywords        String?       @db.Text
+  seoImageUrl        String?
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   deletedAt          DateTime?
@@ -830,6 +844,7 @@ model Product {
   inquiries       Inquiry[]
   favorites       FavoriteProduct[]
   analytics       ProductAnalytic[]
+  viewHistories   UserViewHistory[]
   adCampaigns     AdCampaign[]
 
   @@index([companyId])
@@ -858,6 +873,7 @@ model ProductVideo {
   productId String
   url       String
   title     String?
+  thumbnailUrl String?
   createdAt DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -2196,6 +2212,49 @@ model FavoriteCompany {
 
   @@unique([userId, companyId])
   @@index([userId])
+}
+
+model UserSearchHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  query        String
+  normalizedQuery String?
+  scope        String
+  mode         String?
+  resultsCount Int?
+  filters      String?  @db.LongText
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([scope])
+}
+
+model UserViewHistory {
+  id          String             @id @default(uuid())
+  userId      String
+  entityType  UserViewEntityType
+  entityId    String
+  productId   String?
+  companyId   String?
+  title       String?
+  slug        String?
+  metadata    String?            @db.LongText
+  viewCount   Int                @default(1)
+  firstViewedAt DateTime         @default(now())
+  lastViewedAt  DateTime         @default(now())
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+  @@index([userId, lastViewedAt])
+  @@index([productId])
+  @@index([companyId])
 }
 
 // ============================================================

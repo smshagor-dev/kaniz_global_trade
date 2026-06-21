@@ -6,6 +6,7 @@ import type { Metadata } from 'next'
 import { InquiryForm } from '@/components/public/products/inquiry-form'
 import { CurrencyAmount } from '@/components/currency/currency-amount'
 import { CurrencyRange } from '@/components/currency/currency-range'
+import { UserHistoryTracker } from '@/components/history/user-history-tracker'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -87,6 +88,21 @@ export default async function ProductDetailPage({ params }: Props) {
 
   return (
     <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
+      <UserHistoryTracker
+        payload={{
+          type: 'VIEW',
+          entityType: 'PRODUCT',
+          entityId: product.id,
+          productId: product.id,
+          companyId: product.company.id,
+          title: product.name,
+          slug: product.slug,
+          metadata: {
+            categoryId: product.categoryId,
+            companySlug: product.company.slug,
+          },
+        }}
+      />
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <Link href="/" className="hover:text-blue-700">Home</Link>

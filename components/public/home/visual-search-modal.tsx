@@ -332,7 +332,7 @@ export function VisualSearchModal({
                   </div>
                   <h3 className="mt-4 text-lg font-black tracking-[-0.03em] text-gray-950 sm:text-xl">Upload an image to start</h3>
                   <p className="mt-2 text-sm leading-6 text-gray-500">
-                    We will preview the image, store it, extract useful search terms, and show matching products from your marketplace.
+                    Google AI will analyze the image, extract marketplace search terms, and show matching products from your marketplace.
                   </p>
                 </div>
               </div>

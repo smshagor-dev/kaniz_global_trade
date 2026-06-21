@@ -160,9 +160,9 @@ export async function sendQuotationEmail(
   buyerEmail: string,
   buyerName: string,
   supplierName: string,
-  quotationId: string
+  destinationPath: string
 ): Promise<void> {
-  const url = `${process.env.NEXT_PUBLIC_APP_URL}/buyer/quotations/${quotationId}`
+  const url = `${process.env.NEXT_PUBLIC_APP_URL}${destinationPath}`
   await sendEmail({
     to: buyerEmail,
     subject: `Quotation received from ${supplierName}`,
@@ -170,7 +170,7 @@ export async function sendQuotationEmail(
       <h2>You received a new quotation</h2>
       <p>Hi ${buyerName},</p>
       <p><strong>${supplierName}</strong> has submitted a quotation for your request.</p>
-      <a href="${url}" class="btn">View Quotation</a>
+      <a href="${url}" class="btn">View RFQ & Quotation</a>
     `),
   })
 }

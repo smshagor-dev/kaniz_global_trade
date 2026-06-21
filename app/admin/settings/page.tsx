@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
 export default function AdminSettingsIndexPage() {
-  redirect('/admin/settings/currency')
+  redirect('/admin/settings/ai')
 }

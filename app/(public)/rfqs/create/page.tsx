@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
 import { RFQCreateForm } from '@/components/public/rfq-create-form'
+import { RFQCreateAccessGate } from '@/components/public/rfq-create-access-gate'
 
 export const metadata: Metadata = {
   title: 'Post RFQ',
@@ -46,7 +47,9 @@ export default async function CreateRFQPage() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <RFQCreateForm categories={categories} countries={countries} currencies={currencies} />
+          <RFQCreateAccessGate>
+            <RFQCreateForm categories={categories} countries={countries} currencies={currencies} />
+          </RFQCreateAccessGate>
 
           <div className="space-y-4">
             {[

@@ -54,15 +54,20 @@ function RegisterPageContent() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/auth-b2b-bg.svg')" }}>
-      <div className="pointer-events-none absolute inset-0 bg-slate-950/35" />
-      <div className="bg-white/95 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden backdrop-blur">
-        <div className="relative overflow-hidden bg-[linear-gradient(135deg,_#1d4ed8_0%,_#0f766e_50%,_#166534_100%)] p-8 text-center">
+    <div className="relative overflow-hidden bg-slate-100 flex items-center justify-center p-4 py-8 md:py-10">
+      <div
+        className="pointer-events-none absolute inset-0 scale-[1.02] bg-cover bg-center bg-no-repeat blur-[2px]"
+        style={{ backgroundImage: "url('/auth-b2b-bg.svg')" }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,248,240,0.72)_0%,rgba(255,244,235,0.66)_42%,rgba(248,250,252,0.74)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(249,115,22,0.16),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.46)_0%,rgba(15,23,42,0.3)_100%)]" />
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/70 bg-white/97 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.45)] backdrop-blur-md">
+        <div className="relative overflow-hidden bg-[linear-gradient(135deg,_#f97316_0%,_#fb923c_42%,_#ef4444_100%)] p-8 text-center">
           <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.35) 0 2px, transparent 2px 14px)' }} />
           <Link href="/" className="inline-flex items-center gap-2 text-white font-bold text-xl mb-2">
             <Globe2 className="w-7 h-7" /> Kaniz Global Trade
           </Link>
-          <p className="relative z-10 text-emerald-50 text-sm">Create your textile sourcing and export account</p>
+          <p className="relative z-10 text-base font-semibold text-white drop-shadow-sm">Create your textile sourcing and export account</p>
         </div>
 
         <div className="p-8">
@@ -76,11 +81,15 @@ function RegisterPageContent() {
                 key={value}
                 type="button"
                 onClick={() => setValue('role', value as 'BUYER' | 'SUPPLIER_OWNER')}
-                className={`border-2 rounded-xl p-3 text-center transition-colors ${role === value ? 'border-blue-700 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
+                className={`border-2 rounded-xl p-3 text-center transition-colors ${
+                  role === value
+                    ? 'border-orange-500 bg-orange-50 shadow-[0_18px_36px_-28px_rgba(249,115,22,0.45)]'
+                    : 'border-slate-300 bg-white/88 hover:border-orange-200 hover:bg-white'
+                }`}
               >
-                <Icon className={`w-6 h-6 mx-auto mb-1 ${role === value ? 'text-blue-700' : 'text-gray-400'}`} />
-                <p className={`text-sm font-semibold ${role === value ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
-                <p className="text-xs text-gray-400">{desc}</p>
+                <Icon className={`w-6 h-6 mx-auto mb-1 ${role === value ? 'text-orange-600' : 'text-slate-500'}`} />
+                <p className={`text-sm font-semibold ${role === value ? 'text-orange-600' : 'text-slate-800'}`}>{label}</p>
+                <p className={`text-xs font-medium ${role === value ? 'text-slate-600' : 'text-slate-600'}`}>{desc}</p>
               </button>
             ))}
           </div>
@@ -124,11 +133,11 @@ function RegisterPageContent() {
 
             <label className="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" {...register('terms')} className="mt-0.5 rounded text-blue-600" />
-              <span className="text-xs text-gray-600">
+              <span className="text-xs font-medium text-slate-800">
                 I agree to the{' '}
-                <Link href="/terms" className="text-blue-700 hover:underline">Terms of Service</Link>
+                <Link href="/terms" className="text-orange-600 hover:underline">Terms of Service</Link>
                 {' '}and{' '}
-                <Link href="/privacy" className="text-blue-700 hover:underline">Privacy Policy</Link>
+                <Link href="/privacy" className="text-orange-600 hover:underline">Privacy Policy</Link>
               </span>
             </label>
             {errors.terms && <p className="text-red-500 text-xs">{errors.terms.message}</p>}
@@ -137,15 +146,15 @@ function RegisterPageContent() {
               type="submit"
               loading={isSubmitting}
               loadingText="Creating Account..."
-              className="w-full bg-blue-700 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+              className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl py-3.5 text-sm font-semibold hover:opacity-95 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
             >
               Create Account
             </LoadingButton>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-5">
+          <p className="text-center text-sm font-medium text-slate-700 mt-5">
             Already have an account?{' '}
-            <Link href="/auth/login" className="text-blue-700 font-semibold hover:underline">Sign in</Link>
+            <Link href="/auth/login" className="text-orange-600 font-semibold hover:underline">Sign in</Link>
           </p>
         </div>
       </div>
@@ -161,4 +170,4 @@ export default function RegisterPage() {
   )
 }
 
-const inp = 'w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent'
+const inp = 'w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent'

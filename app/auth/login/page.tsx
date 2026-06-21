@@ -13,6 +13,12 @@ import { Globe2, Eye, EyeOff } from 'lucide-react'
 import { LoadingButton } from '@/components/ui/loading-button'
 import toast from 'react-hot-toast'
 
+const DEMO_ACCOUNTS = [
+  { role: 'Admin', email: 'admin@kanizglobaltrade.com', password: 'Admin@123456' },
+  { role: 'Supplier', email: 'supplier@kanizglobaltrade.com', password: 'Supplier@123456' },
+  { role: 'Buyer', email: 'buyer@kanizglobaltrade.com', password: 'Buyer@123456' },
+] as const
+
 const schema = z.object({
   email:          z.string().email('Invalid email'),
   password:       z.string().min(1, 'Password required'),
@@ -33,7 +39,7 @@ function LoginPageContent() {
   const [showPass, setShowPass]   = useState(false)
   const [needs2FA, setNeeds2FA]   = useState(false)
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       rememberMe: savedRememberMe,
@@ -95,27 +101,66 @@ function LoginPageContent() {
     }
   }
 
+  function fillDemoAccount(account: (typeof DEMO_ACCOUNTS)[number]) {
+    setValue('email', account.email, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+    setValue('password', account.password, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
+    setNeeds2FA(false)
+    toast.success(`${account.role} demo credentials inserted`)
+  }
+
   return (
-    <div className="relative min-h-screen overflow-hidden flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: "url('/auth-b2b-bg.svg')" }}>
-      <div className="pointer-events-none absolute inset-0 bg-slate-950/35" />
-      <div className="bg-white/95 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden backdrop-blur">
+    <div className="relative overflow-hidden bg-slate-100 flex items-center justify-center p-4 py-8 md:py-10">
+      <div
+        className="pointer-events-none absolute inset-0 scale-[1.02] bg-cover bg-center bg-no-repeat blur-[2px]"
+        style={{ backgroundImage: "url('/auth-b2b-bg.svg')" }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,248,240,0.72)_0%,rgba(255,244,235,0.66)_42%,rgba(248,250,252,0.74)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(249,115,22,0.16),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.46)_0%,rgba(15,23,42,0.3)_100%)]" />
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/70 bg-white/97 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.45)] backdrop-blur-md">
         {/* Header */}
-        <div className="relative overflow-hidden bg-[linear-gradient(135deg,_#0f766e_0%,_#155e75_45%,_#1d4ed8_100%)] p-8 text-center">
+        <div className="relative overflow-hidden bg-[linear-gradient(135deg,_#f97316_0%,_#fb923c_42%,_#ef4444_100%)] p-8 text-center">
           <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.35) 0 2px, transparent 2px 14px)' }} />
           <Link href="/" className="inline-flex items-center gap-2 text-white font-bold text-xl mb-2">
             <Globe2 className="w-7 h-7" /> Kaniz Global Trade
           </Link>
-          <p className="relative z-10 text-cyan-100 text-sm">Sign in to your textile and trade workspace</p>
+          <p className="relative z-10 text-base font-semibold text-white drop-shadow-sm">Sign in to your textile and trade workspace</p>
         </div>
 
         <div className="p-8">
+          <div className="mb-5 rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-slate-900">Demo Login</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Select a role and the form will auto-fill the demo email and password.
+                </p>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-orange-600">
+                Demo
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {DEMO_ACCOUNTS.map((account) => (
+                <button
+                  key={account.role}
+                  type="button"
+                  onClick={() => fillDemoAccount(account)}
+                  className="rounded-xl border border-orange-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 hover:bg-orange-100/50"
+                >
+                  <p className="text-sm font-semibold text-slate-900">{account.role}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{account.email}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {(socialProviders?.data?.google?.enabled || socialProviders?.data?.facebook?.enabled) ? (
               <div className="space-y-3">
                 {socialProviders?.data?.google?.enabled ? (
                   <a
                     href={socialUrl.google}
-                    className="flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                    className="flex w-full items-center justify-center rounded-xl border border-orange-100 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-orange-50"
                   >
                     Continue with Google
                   </a>
@@ -140,11 +185,11 @@ function LoginPageContent() {
             ) : null}
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email Address</label>
+              <label className="block text-sm font-bold text-slate-900 mb-1.5">Email Address</label>
               <input
                 {...register('email')}
                 type="email"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent"
                 placeholder="you@company.com"
               />
               {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
@@ -152,13 +197,13 @@ function LoginPageContent() {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-semibold text-gray-700">Password</label>
+                <label className="text-sm font-bold text-slate-900">Password</label>
               </div>
               <div className="relative">
                 <input
                   {...register('password')}
                   type={showPass ? 'text' : 'password'}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent pr-11"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent pr-11"
                   placeholder="Enter your password"
                 />
                 <button
@@ -173,25 +218,25 @@ function LoginPageContent() {
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-sm text-gray-600">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
                 <input
                   {...register('rememberMe')}
                   type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                 />
                 <span>Remember me</span>
               </label>
-              <Link href="/auth/forgot-password" className="text-sm text-blue-700 hover:underline">
+              <Link href="/auth/forgot-password" className="text-sm font-semibold text-orange-600 hover:underline">
                 Forgot password?
               </Link>
             </div>
 
             {needs2FA && (
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Two-Factor Code</label>
+                <label className="block text-sm font-bold text-slate-900 mb-1.5">Two-Factor Code</label>
                 <input
                   {...register('twoFactorCode')}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-center text-lg tracking-widest"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent text-center text-lg tracking-widest"
                   placeholder="000000"
                   maxLength={6}
                 />
@@ -202,15 +247,15 @@ function LoginPageContent() {
               type="submit"
               loading={isSubmitting}
               loadingText="Signing In..."
-              className="w-full bg-blue-700 text-white rounded-xl py-3.5 text-sm font-semibold hover:bg-blue-800 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
+              className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl py-3.5 text-sm font-semibold hover:opacity-95 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
             >
               Sign In
             </LoadingButton>
           </form>
 
-          <p className="text-center text-sm text-gray-500 mt-6">
+          <p className="text-center text-sm font-medium text-slate-700 mt-6">
             Don&apos;t have an account?{' '}
-            <Link href="/auth/register" className="text-blue-700 font-semibold hover:underline">
+            <Link href="/auth/register" className="text-orange-600 font-semibold hover:underline">
               Register free
             </Link>
           </p>

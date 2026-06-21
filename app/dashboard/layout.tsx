@@ -3,8 +3,9 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useIsAuthenticated, useIsSupplier, useIsAdmin, useCurrentUser, useAuthStore } from '@/store/auth'
-import { post } from '@/lib/utils/api-client'
+import { get, post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { CurrencySelector } from '@/components/currency/currency-selector'
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/dashboard/categories',   icon: FolderTree,      label: 'Categories' },
   { href: '/dashboard/products',     icon: Package,         label: 'Products' },
   { href: '/dashboard/inquiries',    icon: MessageSquare,   label: 'Inquiries' },
+  { href: '/dashboard/rfq-requests', icon: FileText,        label: 'RFQ Requests' },
   { href: '/dashboard/rfqs',         icon: FileText,        label: 'RFQs' },
   { href: '/dashboard/quotations',   icon: Quote,           label: 'Quotations' },
   { href: '/dashboard/trade-orders', icon: Shield,          label: 'Trade Assurance' },
@@ -49,6 +51,14 @@ export default function SupplierDashboardLayout({ children }: { children: React.
   const isAdmin     = useIsAdmin()
   const user        = useCurrentUser()
   const { clearAuth, refreshToken } = useAuthStore()
+  const { data: rfqMenuData } = useQuery({
+    queryKey: ['supplier-rfq-menu-count'],
+    queryFn: () => get<Array<{ quotations?: Array<{ id: string }> }>>('/rfqs?limit=100'),
+    enabled: isAuth && (isSupplier || isAdmin),
+    staleTime: 60 * 1000,
+  })
+
+  const rfqRequestCount = (rfqMenuData?.data || []).filter((item) => !item.quotations?.length).length
 
   useEffect(() => {
     if (!isAuth) router.push('/auth/login?redirect=/dashboard')
@@ -92,7 +102,14 @@ export default function SupplierDashboardLayout({ children }: { children: React.
                 }`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                {label}
+                <span className="min-w-0 flex-1">{label}</span>
+                {href === '/dashboard/rfq-requests' && rfqRequestCount > 0 ? (
+                  <span className={`inline-flex min-h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${
+                    isActive ? 'bg-blue-700 text-white' : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {rfqRequestCount > 99 ? '99+' : rfqRequestCount}
+                  </span>
+                ) : null}
               </Link>
             )
           })}

@@ -12,7 +12,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { FileText, Globe2, Loader2, ReceiptText, Target } from 'lucide-react'
+import { ArrowRight, FileText, Globe2, Loader2, ReceiptText, Target } from 'lucide-react'
+import { getQuotationStatusMeta, getRFQStatusMeta } from '@/lib/trade/status'
 
 interface RFQ {
   id: string
@@ -27,6 +28,7 @@ interface RFQ {
   destinationCountry?: { name: string } | null
   currency?: { code: string; symbol: string } | null
   _count: { quotations: number }
+  quotations?: Array<{ id: string; status: string; createdAt: string }>
 }
 
 export default function DashboardRFQsPage() {
@@ -41,7 +43,7 @@ export default function DashboardRFQsPage() {
       acc[rfq.status] = (acc[rfq.status] || 0) + 1
       return acc
     }, {})
-  ).map(([name, value]) => ({ name, value }))
+  ).map(([name, value]) => ({ name: getRFQStatusMeta(name).shortLabel, value }))
 
   const summary = {
     total: rfqs.length,
@@ -102,6 +104,12 @@ export default function DashboardRFQsPage() {
               <div className="space-y-3">
                 {rfqs.map((rfq) => (
                   <div key={rfq.id} className="rounded-2xl border border-gray-100 p-4">
+                    {(() => {
+                      const rfqStatus = getRFQStatusMeta(rfq.status)
+                      const quotationStatus = rfq.quotations?.[0] ? getQuotationStatusMeta(rfq.quotations[0].status) : null
+
+                      return (
+                        <>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-gray-900">{rfq.productName}</p>
@@ -109,7 +117,7 @@ export default function DashboardRFQsPage() {
                           {rfq.category?.name || 'General'} | {rfq.destinationCountry?.name || 'Destination not set'}
                         </p>
                       </div>
-                      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{rfq.status}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${rfqStatus.className}`}>{rfqStatus.shortLabel}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-gray-600">
                       <p>Quantity: {rfq.quantity}</p>
@@ -119,6 +127,27 @@ export default function DashboardRFQsPage() {
                       </p>
                       <p>Expires: {rfq.expiresAt ? new Date(rfq.expiresAt).toLocaleDateString() : 'N/A'}</p>
                     </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/dashboard/rfqs/${rfq.id}`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                      >
+                        Open RFQ
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                      {quotationStatus ? (
+                        <span className={`rounded-lg px-3 py-2 text-xs font-semibold ${quotationStatus.className}`}>
+                          Your offer: {quotationStatus.shortLabel}
+                        </span>
+                      ) : (
+                        <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                          Not quoted yet
+                        </span>
+                      )}
+                    </div>
+                        </>
+                      )
+                    })()}
                   </div>
                 ))}
                 {!rfqs.length && <p className="text-sm text-gray-500">No RFQs available right now.</p>}

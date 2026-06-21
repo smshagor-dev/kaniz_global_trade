@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, requireCompanyAccess, getAuthUser, isAdmin, ROLES, ApiError } from '@/lib/permissions'
+import { requireAuth, isAdmin, ROLES, ApiError } from '@/lib/permissions'
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 import { createNotification } from '@/server/services/notification'
 import { sendNewInquiryEmail } from '@/lib/email'
@@ -127,7 +127,9 @@ export async function POST(req: NextRequest) {
         authUser.email,
         data.subject,
         inquiry.id
-      )
+      ).catch((emailError) => {
+        console.error('Inquiry email failed:', emailError)
+      })
     }
 
     return successResponse(inquiry, 'Inquiry sent successfully', undefined, 201)

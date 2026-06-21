@@ -68,6 +68,8 @@ const navGroups = [
         icon: Settings,
         label: 'Settings',
         children: [
+          { href: '/admin/settings/ai', label: 'AI Search' },
+          { href: '/admin/settings/home', label: 'Home Page' },
           { href: '/admin/settings/payment', label: 'Payment' },
           { href: '/admin/settings/currency', label: 'Currency' },
           { href: '/admin/settings/language', label: 'Language' },

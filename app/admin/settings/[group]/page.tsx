@@ -94,9 +94,12 @@ interface GatewayCardConfig {
 }
 
 const GROUP_MAP: Record<string, string> = {
+  ai: 'AI',
+  home: 'HOME',
   payment: 'PAYMENT',
   currency: 'CURRENCY',
   language: 'LANGUAGE',
+  advertising: 'ADVERTISING',
   social: 'SOCIAL',
   shipping: 'SHIPPING',
   partners: 'PARTNERS',
@@ -547,7 +550,11 @@ export default function AdminSettingsGroupPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{label}</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {group === 'PAYMENT'
+            {group === 'AI'
+              ? 'Store the Google Gemini key here, enable AI search by default, and control both text query understanding and image search from one place.'
+              : group === 'HOME'
+              ? 'Control homepage section visibility, item limits, and the final CTA copy from admin settings.'
+              : group === 'PAYMENT'
               ? 'Keep each gateway isolated in its own card with quick enable, live/sandbox, and credential controls.'
               : group === 'CURRENCY'
                 ? 'Manage the ExchangeRate-API key and sync controls, then review the live currency rows saved in the database.'
@@ -555,6 +562,8 @@ export default function AdminSettingsGroupPage() {
                   ? 'Add languages, store every translation key in the database, and run one-click Google translation per language.'
                   : group === 'PARTNERS'
                     ? 'Manage financing and insurance partners, including API keys and secrets, directly from the database.'
+                    : group === 'ADVERTISING'
+                      ? 'Control campaign availability, placement access, approval workflow, and supplier-facing defaults for advertising.'
                 : 'Manage database-backed runtime settings for this integration group.'}
           </p>
         </div>

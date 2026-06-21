@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { get } from '@/lib/utils/api-client'
+import Link from 'next/link'
 import { CurrencyAmount } from '@/components/currency/currency-amount'
 import {
   Bar,
@@ -12,7 +13,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { BadgeDollarSign, FileSignature, Loader2, Send, TimerReset } from 'lucide-react'
+import { ArrowRight, BadgeDollarSign, FileSignature, Loader2, Send, TimerReset } from 'lucide-react'
+import { getQuotationStatusMeta } from '@/lib/trade/status'
 
 interface Quotation {
   id: string
@@ -26,6 +28,7 @@ interface Quotation {
   inquiry?: { subject: string } | null
   company: { name: string }
   items: Array<{ id: string }>
+  tradeOrder?: { id: string; status: string } | null
 }
 
 export default function DashboardQuotationsPage() {
@@ -40,7 +43,7 @@ export default function DashboardQuotationsPage() {
       acc[quotation.status] = (acc[quotation.status] || 0) + 1
       return acc
     }, {})
-  ).map(([name, value]) => ({ name, value }))
+  ).map(([name, value]) => ({ name: getQuotationStatusMeta(name).shortLabel, value }))
 
   const totalValue = quotations.reduce((sum, item) => sum + Number(item.totalPrice), 0)
   const summary = {
@@ -102,6 +105,11 @@ export default function DashboardQuotationsPage() {
               <div className="space-y-3">
                 {quotations.map((quotation) => (
                   <div key={quotation.id} className="rounded-2xl border border-gray-100 p-4">
+                    {(() => {
+                      const statusMeta = getQuotationStatusMeta(quotation.status)
+
+                      return (
+                        <>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-gray-900">
@@ -111,22 +119,34 @@ export default function DashboardQuotationsPage() {
                           {quotation.items.length} line items | Delivery: {quotation.deliveryTime || 'Not specified'}
                         </p>
                       </div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        quotation.status === 'ACCEPTED'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : quotation.status === 'SENT'
-                            ? 'bg-blue-50 text-blue-700'
-                            : 'bg-gray-100 text-gray-700'
-                      }`}>
-                        {quotation.status}
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.className}`}>
+                        {statusMeta.shortLabel}
                       </span>
                     </div>
+                    <p className="mt-3 text-xs text-gray-500">{statusMeta.description}</p>
                     <div className="mt-3 flex items-center justify-between text-sm">
                       <p className="font-semibold text-gray-900"><CurrencyAmount amount={quotation.totalPrice} currencyCode={quotation.currencyCode} showCode /></p>
                       <p className="text-gray-500">
                         {quotation.validUntil ? `Valid until ${new Date(quotation.validUntil).toLocaleDateString()}` : new Date(quotation.createdAt).toLocaleDateString()}
                       </p>
                     </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/dashboard/quotations/${quotation.id}`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                      >
+                        Open detail
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                      {quotation.tradeOrder ? (
+                        <span className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                          Trade order: {quotation.tradeOrder.status}
+                        </span>
+                      ) : null}
+                    </div>
+                        </>
+                      )
+                    })()}
                   </div>
                 ))}
                 {!quotations.length && <p className="text-sm text-gray-500">No quotations submitted yet.</p>}

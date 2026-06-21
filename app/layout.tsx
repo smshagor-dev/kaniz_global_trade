@@ -15,6 +15,14 @@ export const metadata: Metadata = {
   description:
     'Connect with verified global suppliers and buyers. Find export/import products, send RFQs, get quotations, and trade internationally with confidence.',
   keywords: ['b2b marketplace', 'export import', 'global trade', 'suppliers', 'buyers', 'RFQ'],
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+    ],
+    shortcut: ['/icon.svg'],
+    apple: ['/icon.svg'],
+  },
   openGraph: {
     type: 'website',
     siteName: 'Kaniz Global Trade',

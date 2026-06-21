@@ -4,6 +4,7 @@ import prisma from '@/lib/db/prisma'
 import { CheckCircle, MapPin, Globe, Phone, Mail, Star, Package, Users, ArrowRight, Clapperboard } from 'lucide-react'
 import { InquiryForm } from '@/components/public/products/inquiry-form'
 import type { Metadata } from 'next'
+import { UserHistoryTracker } from '@/components/history/user-history-tracker'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -63,6 +64,20 @@ export default async function CompanyDetailPage({ params }: Props) {
 
   return (
     <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
+      <UserHistoryTracker
+        payload={{
+          type: 'VIEW',
+          entityType: 'COMPANY',
+          entityId: company.id,
+          companyId: company.id,
+          title: company.name,
+          slug: company.slug,
+          metadata: {
+            businessType: company.businessType,
+            countryCode: company.country?.code || null,
+          },
+        }}
+      />
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <Link href="/" className="hover:text-blue-700">Home</Link>

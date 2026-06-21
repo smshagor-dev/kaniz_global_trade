@@ -21,7 +21,16 @@ const SEARCH_MODES = [
   { id: 'image', label: 'Image Search' },
 ] as const
 
-const TRENDING_KEYWORDS = [
+type MarketplaceDiscoveryProps = {
+  title?: string
+  helpText?: string
+  trendingKeywords?: string[]
+  suggestionPool?: string[]
+  recentSearchFallback?: string[]
+  popularTags?: string[]
+}
+
+const DEFAULT_TRENDING_KEYWORDS = [
   'solar street light',
   'cotton t-shirt',
   'smart watch',
@@ -30,7 +39,7 @@ const TRENDING_KEYWORDS = [
   'packaging box',
 ]
 
-const SUGGESTION_POOL = [
+const DEFAULT_SUGGESTION_POOL = [
   'Smart watch suppliers',
   'Cotton t-shirt wholesale',
   'Solar light manufacturer',
@@ -41,15 +50,26 @@ const SUGGESTION_POOL = [
   'Mobile accessories',
 ]
 
-export function MarketplaceDiscovery() {
+const DEFAULT_RECENT_FALLBACK = ['wireless earbuds', 'industrial pumps', 'cotton socks']
+
+export function MarketplaceDiscovery({
+  title = 'AI Mode',
+  helpText = 'Find products, suppliers, and RFQs using smart search or image search.',
+  trendingKeywords = DEFAULT_TRENDING_KEYWORDS,
+  suggestionPool = DEFAULT_SUGGESTION_POOL,
+  recentSearchFallback = DEFAULT_RECENT_FALLBACK,
+  popularTags,
+}: MarketplaceDiscoveryProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [query, setQuery] = useState('')
-  const [searchMode, setSearchMode] = useState<(typeof SEARCH_MODES)[number]['id']>('product')
+  const [searchMode, setSearchMode] = useState<(typeof SEARCH_MODES)[number]['id']>('ai')
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
 
   const placeholder = useMemo(() => {
+    if (searchMode === 'ai') return 'Ask AI to find products, suppliers, materials, or sourcing ideas...'
+    if (searchMode === 'image') return 'Use AI image search below to upload a product photo...'
     if (searchMode === 'supplier') return 'Search suppliers, companies, or countries...'
     if (searchMode === 'catalog') return 'Search catalogs, product groups, or categories...'
     if (pathname.startsWith('/companies')) return 'Search manufacturers, countries, or product lines...'
@@ -59,9 +79,9 @@ export function MarketplaceDiscovery() {
 
   const suggestions = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    if (!normalized) return SUGGESTION_POOL.slice(0, 5)
-    return SUGGESTION_POOL.filter((item) => item.toLowerCase().includes(normalized)).slice(0, 5)
-  }, [query])
+    if (!normalized) return suggestionPool.slice(0, 5)
+    return suggestionPool.filter((item) => item.toLowerCase().includes(normalized)).slice(0, 5)
+  }, [query, suggestionPool])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -86,6 +106,12 @@ export function MarketplaceDiscovery() {
     const normalized = nextQuery.trim()
     if (normalized) persistRecentSearch(normalized)
     setShowSuggestions(false)
+
+    if (searchMode === 'supplier') {
+      router.push(normalized ? `/companies?q=${encodeURIComponent(normalized)}` : '/companies')
+      return
+    }
+
     router.push(normalized ? `/products?q=${encodeURIComponent(normalized)}` : '/products')
   }
 
@@ -95,7 +121,7 @@ export function MarketplaceDiscovery() {
         <div className="flex flex-col items-center gap-4 lg:gap-5">
           <div className="flex flex-wrap items-center justify-center gap-3 text-[15px] font-black tracking-[-0.03em] text-slate-900 sm:gap-4 lg:gap-6 lg:text-[17px]">
             <div className="inline-flex items-center gap-2 pb-2 text-slate-900">
-              <span className="text-[21px] font-black tracking-[-0.05em] sm:text-[24px] lg:text-[28px]">AI Mode</span>
+              <span className="text-[21px] font-black tracking-[-0.05em] sm:text-[24px] lg:text-[28px]">{title}</span>
               <Sparkles className="h-3.5 w-3.5 text-orange-500" />
             </div>
             <span className="hidden h-7 w-px bg-slate-300 lg:block" />
@@ -187,7 +213,7 @@ export function MarketplaceDiscovery() {
                           Recent searches
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {(recentSearches.length ? recentSearches : ['wireless earbuds', 'industrial pumps', 'cotton socks']).map((item) => (
+                          {(recentSearches.length ? recentSearches : recentSearchFallback).map((item) => (
                             <button
                               key={item}
                               type="button"
@@ -210,7 +236,7 @@ export function MarketplaceDiscovery() {
                           Trending keywords
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {TRENDING_KEYWORDS.map((item) => (
+                          {trendingKeywords.map((item) => (
                             <button
                               key={item}
                               type="button"
@@ -234,12 +260,12 @@ export function MarketplaceDiscovery() {
               <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 sm:text-sm">
                   <VisualSearchModal
-                    label="Image Search"
+                    label="AI Image Search"
                     inlinePanel
                     panelClassName="absolute left-0 top-full z-[80] mt-3 w-[min(960px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.32)]"
                     buttonClassName="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 font-semibold text-slate-800 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
                   />
-                  <span className="truncate">Smart product, category and supplier search</span>
+                  <span className="truncate">{helpText}</span>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
@@ -264,7 +290,7 @@ export function MarketplaceDiscovery() {
 
           <div className="flex w-full max-w-[1080px] flex-wrap items-center gap-2 text-sm">
             <span className="font-semibold text-slate-500">Popular now:</span>
-            {TRENDING_KEYWORDS.slice(0, 5).map((keyword) => (
+            {(popularTags?.length ? popularTags : trendingKeywords).slice(0, 5).map((keyword) => (
               <button
                 key={keyword}
                 type="button"

@@ -1,7 +1,7 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
-import { get } from '@/lib/utils/api-client'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { get, patch } from '@/lib/utils/api-client'
 import Link from 'next/link'
 import {
   Bar,
@@ -12,7 +12,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Loader2, MessageSquare, Reply, Search, UserRound } from 'lucide-react'
+import { ArrowRight, Loader2, MessageSquare, Reply, Search, UserRound } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface Inquiry {
   id: string
@@ -27,9 +28,23 @@ interface Inquiry {
 }
 
 export default function DashboardInquiriesPage() {
+  const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard-inquiries'],
     queryFn: () => get<Inquiry[]>('/inquiries?limit=50'),
+  })
+
+  const statusMutation = useMutation({
+    mutationFn: ({ inquiryId, status }: { inquiryId: string; status: 'OPEN' | 'CLOSED' }) =>
+      patch(`/inquiries/${inquiryId}/status`, { status }),
+    onSuccess: (_, variables) => {
+      toast.success(`Inquiry marked ${variables.status.toLowerCase()}`)
+      qc.invalidateQueries({ queryKey: ['dashboard-inquiries'] })
+    },
+    onError: (error: unknown) => {
+      const msg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to update inquiry'
+      toast.error(msg)
+    },
   })
 
   const inquiries = data?.data || []
@@ -122,6 +137,23 @@ export default function DashboardInquiriesPage() {
                     <div className="mt-3 flex items-center justify-between text-xs text-gray-400">
                       <span>{inquiry._count.replies} replies</span>
                       <span>{new Date(inquiry.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/dashboard/inquiries/${inquiry.id}`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                      >
+                        Open thread
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => statusMutation.mutate({ inquiryId: inquiry.id, status: inquiry.status === 'CLOSED' ? 'OPEN' : 'CLOSED' })}
+                        disabled={statusMutation.isPending}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:border-blue-200 hover:text-blue-700 disabled:opacity-50"
+                      >
+                        {inquiry.status === 'CLOSED' ? 'Reopen' : 'Close'}
+                      </button>
                     </div>
                   </div>
                 ))}

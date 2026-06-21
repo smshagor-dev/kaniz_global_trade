@@ -2,13 +2,14 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { get, post } from '@/lib/utils/api-client'
+import { del, get, post } from '@/lib/utils/api-client'
 import {
-  Package, CheckCircle, XCircle, Eye, Filter,
-  Search, ChevronDown, Loader2, ExternalLink,
+  Package, CheckCircle, XCircle, Eye, Loader2, ExternalLink, Plus, Edit, Trash2,
+  Search,
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import { LoadingButton } from '@/components/ui/loading-button'
 
 interface Product {
   id: string
@@ -23,11 +24,12 @@ interface Product {
 
 export default function AdminProductsPage() {
   const qc = useQueryClient()
-  const [status, setStatus]       = useState('PENDING')
-  const [search, setSearch]       = useState('')
-  const [page, setPage]           = useState(1)
+  const [status, setStatus] = useState('PENDING')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [rejectModal, setRejectModal] = useState<{ productId: string; name: string } | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [deleteModal, setDeleteModal] = useState<{ productId: string; name: string } | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-products', status, search, page],
@@ -48,6 +50,16 @@ export default function AdminProductsPage() {
     onError: () => toast.error('Action failed'),
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (productId: string) => del(`/products/${productId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-products'] })
+      toast.success('Product deleted')
+      setDeleteModal(null)
+    },
+    onError: () => toast.error('Delete failed'),
+  })
+
   const products = (data?.data as unknown as { data: Product[]; meta: { total: number; totalPages: number } })?.data || []
   const meta     = (data?.data as unknown as { data: Product[]; meta: { total: number; totalPages: number } })?.meta
 
@@ -55,9 +67,15 @@ export default function AdminProductsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Product Approval</h1>
-          <p className="text-sm text-gray-500 mt-1">Review and approve supplier products</p>
+          <h1 className="text-2xl font-bold text-gray-900">Products</h1>
+          <p className="text-sm text-gray-500 mt-1">Review, publish, edit, and manage supplier products</p>
         </div>
+        <Link
+          href="/admin/products/new"
+          className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-800"
+        >
+          <Plus className="h-4 w-4" /> Add Product
+        </Link>
       </div>
 
       {/* Filters */}
@@ -72,7 +90,7 @@ export default function AdminProductsPage() {
           />
         </div>
         <div className="flex gap-2 flex-wrap">
-          {['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'].map((s) => (
+          {['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED', 'DRAFT'].map((s) => (
             <button
               key={s}
               onClick={() => { setStatus(s); setPage(1) }}
@@ -142,6 +160,14 @@ export default function AdminProductsPage() {
                       className="p-1.5 text-gray-400 hover:text-blue-700 rounded transition-colors">
                       <Eye className="w-4 h-4" />
                     </Link>
+                    <Link
+                      href={`/admin/products/${p.id}/edit`}
+                      className="rounded border border-blue-200 px-2.5 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Edit className="h-3.5 w-3.5" /> Edit
+                      </span>
+                    </Link>
                     {p.status === 'PENDING' && (
                       <>
                         <button
@@ -168,6 +194,12 @@ export default function AdminProductsPage() {
                         Suspend
                       </button>
                     )}
+                    <button
+                      onClick={() => setDeleteModal({ productId: p.id, name: p.name })}
+                      className="rounded border border-red-200 px-2 py-1.5 text-red-600 transition-colors hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -225,6 +257,33 @@ export default function AdminProductsPage() {
                 {approveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Reject Product
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="mb-2 font-bold text-gray-900">Delete Product?</h3>
+            <p className="mb-5 text-sm text-gray-500">
+              This will remove <strong>{deleteModal.name}</strong> from the marketplace.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteModal(null)}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <LoadingButton
+                onClick={() => deleteMutation.mutate(deleteModal.productId)}
+                loading={deleteMutation.isPending}
+                loadingText="Deleting..."
+                className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                Delete
+              </LoadingButton>
             </div>
           </div>
         </div>

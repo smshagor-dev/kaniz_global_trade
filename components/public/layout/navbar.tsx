@@ -26,6 +26,7 @@ import {
 import { COUNTRIES, type CountryOption } from '@/lib/constants/countries'
 import { useCurrency } from '@/lib/currency/client'
 import { VisualSearchModal } from '@/components/public/home/visual-search-modal'
+import { LoginModal } from '@/components/public/auth/login-modal'
 import { useLanguage } from '@/lib/i18n'
 import { get, patch, post } from '@/lib/utils/api-client'
 import { useAuthStore, useIsAdmin, useIsAuthenticated, useIsBuyer, useIsSupplier } from '@/store/auth'
@@ -93,6 +94,8 @@ export function Navbar() {
   const [mobileQuery, setMobileQuery] = useState('')
   const [stickySearchQuery, setStickySearchQuery] = useState('')
   const [showStickySearch, setShowStickySearch] = useState(false)
+  const [loginModalOpen, setLoginModalOpen] = useState(false)
+  const [authActionLoading, setAuthActionLoading] = useState<'login' | 'signup' | null>(null)
   const [categoriesOpen, setCategoriesOpen] = useState(false)
   const [categoriesLoading, setCategoriesLoading] = useState(false)
   const [categories, setCategories] = useState<NavbarCategory[]>([])
@@ -118,6 +121,8 @@ export function Navbar() {
   const { t, language, setLanguage, availableLanguages } = useLanguage()
   const { currencies, selectedCurrency: currency, setSelectedCurrency: setCurrency } = useCurrency()
   const isHomePage = pathname === '/'
+  const isLoginPage = pathname === '/auth/login'
+  const loginRedirectPath = pathname || '/'
 
   const dashboardPath = isAdmin ? '/admin' : isSupplier ? '/dashboard' : '/buyer'
   const selectedCountry = COUNTRIES.find((country) => country.code === deliveryCountryCode) || COUNTRIES.find((country) => country.code === 'BD') || COUNTRIES[0]
@@ -277,6 +282,32 @@ export function Navbar() {
     router.push(normalized ? `/products?q=${encodeURIComponent(normalized)}` : '/products')
   }
 
+  function handleOpenLoginModal() {
+    if (isLoginPage) {
+      setAuthActionLoading('login')
+      router.push('/auth/login')
+      return
+    }
+
+    setAuthActionLoading('login')
+    setLoginModalOpen(true)
+  }
+
+  function handleOpenSignupPage() {
+    setAuthActionLoading('signup')
+    router.push('/auth/register')
+  }
+
+  useEffect(() => {
+    if (loginModalOpen) {
+      setAuthActionLoading(null)
+    }
+  }, [loginModalOpen])
+
+  useEffect(() => {
+    setAuthActionLoading(null)
+  }, [pathname])
+
   return (
     <header className="sticky top-0 z-50 border-b border-orange-100 bg-[radial-gradient(circle_at_top,#fff6ef_0%,#fffaf7_45%,#ffffff_100%)] shadow-sm backdrop-blur">
       <div className="w-full px-4 md:px-6 xl:px-8 2xl:px-10">
@@ -301,7 +332,7 @@ export function Navbar() {
               />
               <VisualSearchModal
                 iconOnly
-                label="Image Search"
+                label="AI Image Search"
                 inlinePanel
                 panelClassName="absolute right-0 top-full z-[80] mt-3 w-[min(960px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.32)]"
                 buttonClassName="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
@@ -342,6 +373,9 @@ export function Navbar() {
               isBuyer={isBuyer}
               handleLogout={handleLogout}
               t={t}
+              onOpenLoginModal={handleOpenLoginModal}
+              onOpenSignupPage={handleOpenSignupPage}
+              authActionLoading={authActionLoading}
             />
           </div>
         </div>
@@ -404,7 +438,7 @@ export function Navbar() {
                 />
                 <VisualSearchModal
                   iconOnly
-                  label="Image Search"
+                  label="AI Image Search"
                   inlinePanel
                   panelClassName="absolute right-0 top-full z-[80] mt-3 w-[min(960px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.32)]"
                   buttonClassName="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
@@ -432,14 +466,17 @@ export function Navbar() {
                 notifications={notifications}
                 unreadCount={unreadCount}
                 notificationsLoading={notificationsLoading}
-                onMarkAllRead={handleMarkAllRead}
-                dashboardPath={dashboardPath}
-                isBuyer={isBuyer}
-                handleLogout={handleLogout}
-                t={t}
-                compact
-              />
-            </div>
+              onMarkAllRead={handleMarkAllRead}
+              dashboardPath={dashboardPath}
+              isBuyer={isBuyer}
+              handleLogout={handleLogout}
+              t={t}
+              onOpenLoginModal={handleOpenLoginModal}
+              onOpenSignupPage={handleOpenSignupPage}
+              authActionLoading={authActionLoading}
+              compact
+            />
+          </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-orange-100/80 pt-4 text-sm font-medium text-slate-700">
@@ -525,7 +562,7 @@ export function Navbar() {
               />
               <div className="flex items-center gap-2">
                 <VisualSearchModal
-                  label="Image Search"
+                  label="AI Image Search"
                   buttonClassName="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700"
                 />
                 <button type="submit" className="flex-1 rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-4 py-3 text-sm font-semibold text-white">
@@ -637,17 +674,40 @@ export function Navbar() {
               </div>
             ) : (
               <div className="flex gap-2">
-                <Link href="/auth/login" onClick={() => setMobileOpen(false)} className="flex-1 rounded-full border border-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false)
+                    handleOpenLoginModal()
+                  }}
+                  data-skip-loading="true"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-full border border-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-700"
+                >
+                  {authActionLoading === 'login' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Sign in
-                </Link>
-                <Link href="/auth/register" onClick={() => setMobileOpen(false)} className="flex-1 rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-4 py-3 text-center text-sm font-semibold text-white">
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false)
+                    handleOpenSignupPage()
+                  }}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-4 py-3 text-center text-sm font-semibold text-white"
+                >
+                  {authActionLoading === 'signup' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Sign up
-                </Link>
+                </button>
               </div>
             )}
           </div>
         </div>
       ) : null}
+
+      <LoginModal
+        open={loginModalOpen && !isLoginPage}
+        onClose={() => setLoginModalOpen(false)}
+        redirectPath={loginRedirectPath}
+      />
     </header>
   )
 }
@@ -1043,6 +1103,9 @@ function HeaderAuth({
   isBuyer,
   handleLogout,
   t,
+  onOpenLoginModal,
+  onOpenSignupPage,
+  authActionLoading,
   compact = false,
 }: {
   isAuth: boolean
@@ -1059,6 +1122,9 @@ function HeaderAuth({
   isBuyer: boolean
   handleLogout: () => Promise<void>
   t: (key: string) => string
+  onOpenLoginModal: () => void
+  onOpenSignupPage: () => void
+  authActionLoading: 'login' | 'signup' | null
   compact?: boolean
 }) {
   const notificationRef = useRef<HTMLDivElement | null>(null)
@@ -1089,15 +1155,23 @@ function HeaderAuth({
   if (!isAuth) {
     return (
       <>
-        <Link href="/auth/login" className="whitespace-nowrap text-sm font-medium text-slate-700 transition hover:text-orange-600">
-          Sign in
-        </Link>
-        <Link
-          href="/auth/register"
-          className={`whitespace-nowrap rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-sm font-semibold text-white shadow-lg shadow-orange-200 ${compact ? 'px-4 py-2.5' : 'px-5 py-2.5'}`}
+        <button
+          type="button"
+          onClick={onOpenLoginModal}
+          data-skip-loading="true"
+          className="inline-flex items-center gap-2 whitespace-nowrap text-sm font-medium text-slate-700 transition hover:text-orange-600"
         >
+          {authActionLoading === 'login' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Sign in
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSignupPage}
+          className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-sm font-semibold text-white shadow-lg shadow-orange-200 ${compact ? 'px-4 py-2.5' : 'px-5 py-2.5'}`}
+        >
+          {authActionLoading === 'signup' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Sign up
-        </Link>
+        </button>
       </>
     )
   }

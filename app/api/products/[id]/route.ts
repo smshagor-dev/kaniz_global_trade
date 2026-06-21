@@ -3,10 +3,8 @@ import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, requireCompanyAccess, getAuthUser, isAdmin, ApiError } from '@/lib/permissions'
 import { successResponse, errorResponse, handleApiError } from '@/lib/utils/api'
-import { logUpdate, logDelete, logApprove, logReject } from '@/lib/utils/audit'
+import { logUpdate, logDelete } from '@/lib/utils/audit'
 import { indexProduct, removeProductFromIndex } from '@/lib/search'
-import { createNotification } from '@/server/services/notification'
-import { sendProductApprovalEmail } from '@/lib/email'
 
 export async function GET(
   req: NextRequest,
@@ -22,6 +20,7 @@ export async function GET(
       include: {
         images: { orderBy: { sortOrder: 'asc' } },
         videos: true,
+        documents: true,
         variants: true,
         specifications: { orderBy: { sortOrder: 'asc' } },
         certificates: true,
@@ -82,6 +81,7 @@ export async function PUT(
   try {
     const { id } = await params
     const authUser = await requireAuth(req)
+    const userIsAdmin = isAdmin(authUser)
     const product = await prisma.product.findUnique({ where: { id } })
     if (!product) throw new ApiError(404, 'Product not found')
 
@@ -90,11 +90,14 @@ export async function PUT(
     const body = await req.json()
     const data = z.object({
       name: z.string().min(3).optional(),
+      tags: z.string().optional(),
       shortDescription: z.string().optional(),
       description: z.string().optional(),
       categoryId: z.string().optional(),
       subcategoryId: z.string().optional(),
       sku: z.string().optional(),
+      barcode: z.string().optional(),
+      thumbnailUrl: z.string().optional(),
       moq: z.number().positive().optional(),
       priceMin: z.number().positive().optional(),
       priceMax: z.number().positive().optional(),
@@ -104,15 +107,59 @@ export async function PUT(
       packagingDetails: z.string().optional(),
       seoTitle: z.string().optional(),
       seoDescription: z.string().optional(),
-      status: z.enum(['DRAFT', 'PENDING']).optional(),
+      seoKeywords: z.string().optional(),
+      seoImageUrl: z.string().optional(),
+      isFeatured: z.boolean().optional(),
+      isTodaysDeal: z.boolean().optional(),
+      status: z.enum(['DRAFT', 'PENDING', 'APPROVED', 'SUSPENDED']).optional(),
     }).parse(body)
+
+    const updateData: Record<string, unknown> = { ...data }
+
+    if (userIsAdmin) {
+      if (!data.status) {
+        delete updateData.status
+      }
+
+      if (data.status === 'APPROVED') {
+        updateData.approvedAt = new Date()
+        updateData.approvedBy = authUser.userId
+      } else if (data.status) {
+        updateData.approvedAt = null
+        updateData.approvedBy = null
+      }
+    } else {
+      updateData.status = 'PENDING'
+      updateData.approvedAt = null
+      updateData.approvedBy = null
+    }
 
     const updated = await prisma.product.update({
       where: { id },
-      data: { ...data, status: 'PENDING' }, // Re-submit for approval on update
+      data: updateData,
     })
 
     await logUpdate(authUser.userId, 'products', 'Product', id, product, data)
+
+    if (updated.status === 'APPROVED') {
+      try {
+        await indexProduct({
+          id: updated.id,
+          name: updated.name,
+          slug: updated.slug,
+          shortDescription: updated.shortDescription,
+          companyId: updated.companyId,
+          categoryId: updated.categoryId,
+          priceMin: updated.priceMin?.toString(),
+          priceMax: updated.priceMax?.toString(),
+          moq: updated.moq?.toString(),
+          status: updated.status,
+          isFeatured: updated.isFeatured,
+        })
+      } catch { /* non-critical */ }
+    } else {
+      await removeProductFromIndex(updated.id)
+    }
 
     return successResponse(updated, 'Product updated')
   } catch (error) {

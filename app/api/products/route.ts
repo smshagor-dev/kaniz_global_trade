@@ -5,7 +5,6 @@ import { requireAuth, requireCompanyAccess, getAuthUser, isAdmin, ROLES, ApiErro
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 import { logCreate } from '@/lib/utils/audit'
 import { indexProduct } from '@/lib/search'
-import { createNotification } from '@/server/services/notification'
 import { uniqueSlug } from '@/lib/utils/slug'
 
 const createProductSchema = z.object({
@@ -13,9 +12,12 @@ const createProductSchema = z.object({
   categoryId: z.string(),
   subcategoryId: z.string().optional(),
   name: z.string().min(3).max(500),
+  tags: z.string().optional(),
   shortDescription: z.string().max(500).optional(),
   description: z.string().optional(),
   sku: z.string().optional(),
+  barcode: z.string().optional(),
+  thumbnailUrl: z.string().optional(),
   hsCodeId: z.string().optional(),
   moq: z.number().positive().optional(),
   moqUnit: z.string().optional(),
@@ -29,7 +31,30 @@ const createProductSchema = z.object({
   packagingDetails: z.string().optional(),
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
+  seoKeywords: z.string().optional(),
+  seoImageUrl: z.string().optional(),
+  isFeatured: z.boolean().optional(),
+  isTodaysDeal: z.boolean().optional(),
+  status: z.enum(['DRAFT', 'PENDING', 'APPROVED', 'SUSPENDED']).optional(),
 })
+
+function slugToken(value: string) {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 12) || 'PRODUCT'
+}
+
+function generatedSku(name: string) {
+  return `SKU-${slugToken(name)}-${Date.now().toString().slice(-6)}`
+}
+
+function generatedBarcode() {
+  const seed = `${Date.now()}${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`
+  return seed.slice(0, 13)
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -82,7 +107,9 @@ export async function GET(req: NextRequest) {
       where.OR = [
         { name: { contains: search } },
         { shortDescription: { contains: search } },
+        { tags: { contains: search } },
         { sku: { contains: search } },
+        { barcode: { contains: search } },
         { category: { name: { contains: search } } },
         { subcategory: { name: { contains: search } } },
         { company: { name: { contains: search } } },
@@ -128,6 +155,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const authUser = await requireAuth(req)
+    const userIsAdmin = isAdmin(authUser)
     const body = await req.json()
     const data = createProductSchema.parse(body)
 
@@ -155,33 +183,61 @@ export async function POST(req: NextRequest) {
       return !!existing
     })
 
+    let status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'SUSPENDED' = userIsAdmin ? data.status || 'APPROVED' : 'APPROVED'
+
+    if (!userIsAdmin) {
+      const activeFraudAlerts = await prisma.fraudAlert.count({
+        where: {
+          targetCompanyId: data.companyId,
+          status: { in: ['OPEN', 'INVESTIGATING', 'WATCHLIST'] },
+        },
+      })
+
+      if (activeFraudAlerts > 0) {
+        status = 'PENDING'
+      }
+    }
+
     const product = await prisma.product.create({
       data: {
         ...data,
+        sku: data.sku || generatedSku(data.name),
+        barcode: data.barcode || generatedBarcode(),
         slug,
-        status: 'PENDING',
+        status,
+        approvedAt: status === 'APPROVED' ? new Date() : null,
+        approvedBy: status === 'APPROVED' ? authUser.userId : null,
       },
     })
 
     await logCreate(authUser.userId, 'products', 'Product', product.id, { name: product.name })
 
-    // Notify admins of new product pending review
-    const admins = await prisma.userRole.findMany({
-      where: { role: { name: { in: ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'] } } },
-      select: { userId: true },
-    })
-
-    for (const admin of admins) {
-      await createNotification({
-        userId: admin.userId,
-        type: 'PRODUCT_APPROVED',
-        title: 'New product pending review',
-        message: `Product "${product.name}" is waiting for approval`,
-        data: { productId: product.id },
-      })
+    if (status === 'APPROVED') {
+      try {
+        await indexProduct({
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+          shortDescription: product.shortDescription,
+          companyId: product.companyId,
+          categoryId: product.categoryId,
+          priceMin: product.priceMin?.toString(),
+          priceMax: product.priceMax?.toString(),
+          moq: product.moq?.toString(),
+          status,
+          isFeatured: product.isFeatured,
+        })
+      } catch { /* non-critical */ }
     }
 
-    return successResponse(product, 'Product created. Pending admin review.', undefined, 201)
+    return successResponse(
+      product,
+      status === 'APPROVED'
+        ? 'Product created and published.'
+        : 'Product submitted for review because this supplier is under fraud review.',
+      undefined,
+      201
+    )
   } catch (error) {
     return handleApiError(error)
   }

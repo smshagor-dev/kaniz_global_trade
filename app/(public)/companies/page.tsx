@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
-import { Building2, CheckCircle, Search, SlidersHorizontal, MapPin, Package } from 'lucide-react'
+import { Building2, CheckCircle, SlidersHorizontal, MapPin, Package } from 'lucide-react'
 import type { Metadata } from 'next'
+import { expandMarketplaceSearchQuery } from '@/lib/ai/google-marketplace-search'
+import { UserHistoryTracker } from '@/components/history/user-history-tracker'
 
 export const metadata: Metadata = {
   title: 'Verified Suppliers',
@@ -28,11 +30,19 @@ async function getData(params: Record<string, string>) {
   if (params.countryId)    where.countryId    = params.countryId
   if (params.businessType) where.businessType = params.businessType
   if (params.verified === 'true') where.isVerified = true
+  const expanded = params.q ? await expandMarketplaceSearchQuery(params.q, 'companies') : null
+  const searchTerms = expanded?.searchTerms || []
+
   if (params.q) {
     where.OR = [
       { name: { contains: params.q } },
       { mainProducts: { contains: params.q } },
       { description: { contains: params.q } },
+      ...searchTerms.flatMap((term) => [
+        { name: { contains: term } },
+        { mainProducts: { contains: term } },
+        { description: { contains: term } },
+      ]),
     ]
   }
 
@@ -55,19 +65,39 @@ async function getData(params: Record<string, string>) {
     ['MANUFACTURER', 'TRADING_COMPANY', 'BUYING_OFFICE', 'AGENT', 'DISTRIBUTOR'],
   ])
 
-  return { companies, total, countries, businessTypes, page, limit }
+  return { companies, total, countries, businessTypes, page, limit, expanded }
 }
 
 export default async function CompaniesPage({ searchParams }: Props) {
   const resolved = normalizeParams(await searchParams)
-  const { companies, total, countries, businessTypes, page, limit } = await getData(resolved)
+  const { companies, total, countries, businessTypes, page, limit, expanded } = await getData(resolved)
   const totalPages = Math.ceil(total / limit)
 
   return (
     <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
+      {resolved.q ? (
+        <UserHistoryTracker
+          payload={{
+            type: 'SEARCH',
+            query: resolved.q,
+            normalizedQuery: expanded?.normalizedQuery || resolved.q,
+            scope: 'companies',
+            mode: expanded?.usedAI ? 'ai' : 'direct',
+            resultsCount: total,
+            filters: {
+              countryId: resolved.countryId || null,
+              businessType: resolved.businessType || null,
+              verified: resolved.verified || null,
+            },
+          }}
+        />
+      ) : null}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Find Verified Suppliers</h1>
         <p className="text-gray-500 text-sm mt-1">{total.toLocaleString()} companies from around the world</p>
+        {resolved.q && expanded?.usedAI ? (
+          <p className="mt-2 text-xs font-medium text-blue-700">AI search active with Google Gemini query expansion.</p>
+        ) : null}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">

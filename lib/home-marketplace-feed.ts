@@ -1,4 +1,5 @@
 import prisma from '@/lib/db/prisma'
+import { expandMarketplaceSearchQuery } from '@/lib/ai/google-marketplace-search'
 
 export const HOME_MARKETPLACE_BATCH_SIZE = 12
 export const HOME_MARKETPLACE_FOOTER_REVEAL_COUNT = 36
@@ -101,7 +102,7 @@ function serializeDecimal(value: { toString(): string } | number | string | null
   return value.toString()
 }
 
-function buildFeedWhere(query: Required<MarketplaceFeedQuery>) {
+async function buildFeedWhere(query: Required<MarketplaceFeedQuery>) {
   const where: Record<string, unknown> = {
     deletedAt: null,
     status: 'APPROVED',
@@ -125,6 +126,9 @@ function buildFeedWhere(query: Required<MarketplaceFeedQuery>) {
 
   if (query.categoryId) where.categoryId = query.categoryId
 
+  const expanded = query.q ? await expandMarketplaceSearchQuery(query.q, 'products') : null
+  const searchTerms = expanded?.searchTerms || []
+
   if (query.q) {
     where.OR = [
       { name: { contains: query.q } },
@@ -132,6 +136,13 @@ function buildFeedWhere(query: Required<MarketplaceFeedQuery>) {
       { category: { name: { contains: query.q } } },
       { subcategory: { name: { contains: query.q } } },
       { company: { name: { contains: query.q } } },
+      ...searchTerms.flatMap((term) => [
+        { name: { contains: term } },
+        { shortDescription: { contains: term } },
+        { category: { name: { contains: term } } },
+        { subcategory: { name: { contains: term } } },
+        { company: { name: { contains: term } } },
+      ]),
     ]
   }
 
@@ -210,7 +221,7 @@ export async function getMarketplaceFeedPage(
   } satisfies Required<MarketplaceFeedQuery>
 
   const skip = (query.page - 1) * limit
-  const where = buildFeedWhere(query)
+  const where = await buildFeedWhere(query)
   const orderBy = buildFeedOrderBy(query.sort)
 
   const [products, total] = await Promise.all([

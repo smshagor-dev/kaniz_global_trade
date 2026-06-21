@@ -2,6 +2,8 @@ import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
 import type { Metadata } from 'next'
 import { CatalogCard } from '@/components/public/home/catalog-card'
+import { expandMarketplaceSearchQuery } from '@/lib/ai/google-marketplace-search'
+import { UserHistoryTracker } from '@/components/history/user-history-tracker'
 
 export const metadata: Metadata = {
   title: 'Browse Products',
@@ -44,6 +46,9 @@ async function getProducts(params: Record<string, string>) {
   if (params.companyId) where.companyId = params.companyId
   if (params.isFeatured === 'true') where.isFeatured = true
   if (params.verified === 'true') where.company = { verificationStatus: { in: ['ADMIN_VERIFIED', 'PREMIUM_VERIFIED'] } }
+  const expanded = params.q ? await expandMarketplaceSearchQuery(params.q, 'products') : null
+  const searchTerms = expanded?.searchTerms || []
+
   if (params.q) {
     where.OR = [
       { name: { contains: params.q } },
@@ -51,6 +56,13 @@ async function getProducts(params: Record<string, string>) {
       { category: { name: { contains: params.q } } },
       { subcategory: { name: { contains: params.q } } },
       { company: { name: { contains: params.q } } },
+      ...searchTerms.flatMap((term) => [
+        { name: { contains: term } },
+        { shortDescription: { contains: term } },
+        { category: { name: { contains: term } } },
+        { subcategory: { name: { contains: term } } },
+        { company: { name: { contains: term } } },
+      ]),
     ]
   }
 
@@ -90,16 +102,35 @@ async function getProducts(params: Record<string, string>) {
     }),
   ])
 
-  return { products, total, categories, page, limit }
+  return { products, total, categories, page, limit, expanded }
 }
 
 export default async function ProductsPage({ searchParams }: Props) {
   const resolved = normalizeParams(await searchParams)
-  const { products, total, categories, page, limit } = await getProducts(resolved)
+  const { products, total, categories, page, limit, expanded } = await getProducts(resolved)
   const totalPages = Math.ceil(total / limit)
 
   return (
     <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
+      {resolved.q ? (
+        <UserHistoryTracker
+          payload={{
+            type: 'SEARCH',
+            query: resolved.q,
+            normalizedQuery: expanded?.normalizedQuery || resolved.q,
+            scope: 'products',
+            mode: expanded?.usedAI ? 'ai' : 'direct',
+            resultsCount: total,
+            filters: {
+              categoryId: resolved.categoryId || null,
+              subcategoryId: resolved.subcategoryId || null,
+              companyId: resolved.companyId || null,
+              verified: resolved.verified || null,
+              sort: resolved.sort || null,
+            },
+          }}
+        />
+      ) : null}
       <div className="grid gap-8 lg:grid-cols-[290px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <div className="rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm">
@@ -159,6 +190,11 @@ export default async function ProductsPage({ searchParams }: Props) {
                   {resolved.q ? `Search results for "${resolved.q}"` : 'Marketplace products'}
                 </h1>
                 <p className="mt-2 text-sm text-gray-500">{total.toLocaleString()} results found</p>
+                {resolved.q && expanded?.usedAI ? (
+                  <p className="mt-2 text-xs font-medium text-blue-700">
+                    AI search active with Google Gemini query expansion.
+                  </p>
+                ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
                 {[

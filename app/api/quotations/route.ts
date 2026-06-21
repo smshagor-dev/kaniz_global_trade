@@ -5,21 +5,22 @@ import { requireAuth, requireCompanyAccess, ROLES, ApiError } from '@/lib/permis
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 import { createNotification } from '@/server/services/notification'
 import { sendQuotationEmail } from '@/lib/email'
+import { isPubliclyVisibleRFQStatus } from '@/lib/rfqs/visibility'
 
 const createQuotationSchema = z.object({
   rfqId: z.string().optional(),
   inquiryId: z.string().optional(),
   companyId: z.string(),
-  buyerId: z.string(),
+  buyerId: z.string().optional(),
   totalPrice: z.number().positive(),
   currencyCode: z.string().default('USD'),
-  deliveryTime: z.string().optional(),
+  deliveryTime: z.string().trim().min(2, 'Delivery time is required'),
   paymentTermId: z.string().optional(),
   shippingTerms: z.string().optional(),
   validUntil: z.string().optional(),
-  notes: z.string().optional(),
+  notes: z.string().trim().min(10, 'Message must be at least 10 characters'),
   items: z.array(z.object({
-    description: z.string(),
+    description: z.string().trim().min(2, 'Item description is required'),
     quantity: z.number().positive(),
     unit: z.string().optional(),
     unitPrice: z.number().positive(),
@@ -52,9 +53,33 @@ export async function GET(req: NextRequest) {
         include: {
           rfq: { select: { id: true, productName: true, quantity: true } },
           inquiry: { select: { id: true, subject: true } },
-          company: { select: { id: true, name: true, slug: true, logo: true } },
+          company: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              logo: true,
+              companyUsers: {
+                where: { isPrimary: true },
+                take: 1,
+                select: {
+                  user: {
+                    select: { firstName: true, lastName: true },
+                  },
+                },
+              },
+            },
+          },
           items: true,
           attachments: true,
+          tradeOrder: {
+            select: {
+              id: true,
+              status: true,
+              totalAmount: true,
+              currencyCode: true,
+            },
+          },
         },
       }),
       prisma.rFQQuotation.count({ where }),
@@ -69,8 +94,17 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const authUser = await requireAuth(req)
+    if (!authUser.roles.includes(ROLES.SUPPLIER_OWNER) && !authUser.roles.includes(ROLES.SUPPLIER_STAFF)) {
+      throw new ApiError(403, 'Only suppliers can submit quotations')
+    }
+
     const body = await req.json()
     const data = createQuotationSchema.parse(body)
+    const itemsTotal = data.items.reduce((sum, item) => sum + item.totalPrice, 0)
+
+    if (Math.abs(itemsTotal - data.totalPrice) > 0.01) {
+      throw new ApiError(422, 'Quotation total does not match the sum of line items')
+    }
 
     // Must be supplier for this company
     await requireCompanyAccess(req, data.companyId)
@@ -80,12 +114,57 @@ export async function POST(req: NextRequest) {
     }
 
     const quotation = await prisma.$transaction(async (tx) => {
+      let buyerId = data.buyerId
+
+      if (data.rfqId) {
+        const rfq = await tx.rFQ.findUnique({
+          where: { id: data.rfqId },
+          select: {
+            id: true,
+            buyerId: true,
+            status: true,
+            expiresAt: true,
+            deletedAt: true,
+          },
+        })
+
+        if (!rfq || rfq.deletedAt) {
+          throw new ApiError(404, 'RFQ not found')
+        }
+
+        buyerId = rfq.buyerId
+
+        if (!isPubliclyVisibleRFQStatus(rfq.status)) {
+          throw new ApiError(409, 'This RFQ is no longer accepting quotations')
+        }
+
+        if (rfq.expiresAt && rfq.expiresAt <= new Date()) {
+          throw new ApiError(409, 'This RFQ deadline has passed')
+        }
+
+        const existingQuotation = await tx.rFQQuotation.findFirst({
+          where: {
+            rfqId: data.rfqId,
+            companyId: data.companyId,
+          },
+          select: { id: true },
+        })
+
+        if (existingQuotation) {
+          throw new ApiError(409, 'Your company has already submitted a quotation for this RFQ')
+        }
+      }
+
+      if (!buyerId) {
+        throw new ApiError(400, 'Buyer is required for this quotation')
+      }
+
       const q = await tx.rFQQuotation.create({
         data: {
           rfqId: data.rfqId,
           inquiryId: data.inquiryId,
           companyId: data.companyId,
-          buyerId: data.buyerId,
+          buyerId,
           totalPrice: data.totalPrice,
           currencyCode: data.currencyCode,
           deliveryTime: data.deliveryTime,
@@ -115,13 +194,13 @@ export async function POST(req: NextRequest) {
 
     // Notify buyer
     const buyer = await prisma.user.findUnique({
-      where: { id: data.buyerId },
+      where: { id: quotation.buyerId },
       select: { email: true, firstName: true },
     })
 
     if (buyer) {
       await createNotification({
-        userId: data.buyerId,
+        userId: quotation.buyerId,
         type: 'NEW_QUOTATION',
         title: 'New Quotation Received',
         message: `${quotation.company.name} submitted a quotation`,
@@ -129,7 +208,12 @@ export async function POST(req: NextRequest) {
       })
 
       try {
-        await sendQuotationEmail(buyer.email, buyer.firstName, quotation.company.name, quotation.id)
+        await sendQuotationEmail(
+          buyer.email,
+          buyer.firstName,
+          quotation.company.name,
+          data.rfqId ? `/buyer/rfqs/${data.rfqId}` : `/buyer/quotations/${quotation.id}`
+        )
       } catch (emailError) {
         console.error('Quotation email failed:', emailError)
       }

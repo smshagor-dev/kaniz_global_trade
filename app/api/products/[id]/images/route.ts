@@ -11,7 +11,7 @@ const imagesSchema = z.object({
       isPrimary: z.boolean().optional().default(false),
       alt: z.string().optional(),
     })
-  ).min(1),
+  ).default([]),
 })
 
 export async function POST(
@@ -29,6 +29,10 @@ export async function POST(
     const data = imagesSchema.parse(body)
 
     await prisma.productImage.deleteMany({ where: { productId: id } })
+
+    if (!data.images.length) {
+      return successResponse([], 'Product images cleared')
+    }
 
     const created = await prisma.productImage.createMany({
       data: data.images.map((image, index) => ({

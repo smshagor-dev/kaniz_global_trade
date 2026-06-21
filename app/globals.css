@@ -75,6 +75,29 @@
   animation: shimmer 1.5s infinite;
 }
 
+@keyframes kgt-wave-letter {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.82;
+  }
+  50% {
+    transform: translateY(-7px);
+    opacity: 1;
+  }
+}
+
+.kgt-wave-text {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.02em;
+}
+
+.kgt-wave-text > span {
+  display: inline-block;
+  animation: kgt-wave-letter 1.45s ease-in-out infinite;
+}
+
 /* Print styles */
 @media print {
   .no-print { display: none !important; }

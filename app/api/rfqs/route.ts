@@ -6,6 +6,7 @@ import { successResponse, handleApiError, getPaginationParams, paginationMeta } 
 import { createNotification } from '@/server/services/notification'
 import { sendNewRFQEmail } from '@/lib/email'
 import { getSmartMatchesForRFQ } from '@/lib/ai/rfq-matching'
+import { buildPublicActiveRFQWhere } from '@/lib/rfqs/visibility'
 
 const createRFQSchema = z.object({
   categoryId: z.string().optional(),
@@ -25,21 +26,49 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const { page, limit, skip } = getPaginationParams(searchParams)
     const authUser = await getAuthUser(req)
-
+    const now = new Date()
     const where: Record<string, unknown> = { deletedAt: null }
 
-    if (!authUser || (!isAdmin(authUser) && !authUser.roles.includes(ROLES.SUPPLIER_OWNER))) {
-      // Public: show only open/public RFQs
-      where.status = 'OPEN'
-      where.isPublic = true
+    if (
+      !authUser ||
+      (
+        !isAdmin(authUser) &&
+        !authUser.roles.includes(ROLES.SUPPLIER_OWNER) &&
+        !authUser.roles.includes(ROLES.SUPPLIER_STAFF)
+      )
+    ) {
+      Object.assign(where, buildPublicActiveRFQWhere(now))
     } else if (authUser.roles.includes(ROLES.BUYER)) {
       where.buyerId = authUser.userId
     }
 
     const status = searchParams.get('status')
     const categoryId = searchParams.get('categoryId')
-    if (status && isAdmin(authUser!)) where.status = status
+    if (status && authUser && isAdmin(authUser)) where.status = status
     if (categoryId) where.categoryId = categoryId
+
+    const isSupplierViewer = !!authUser && (
+      authUser.roles.includes(ROLES.SUPPLIER_OWNER) ||
+      authUser.roles.includes(ROLES.SUPPLIER_STAFF)
+    ) && !!authUser.companyId
+
+    const include = {
+      buyer: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+      category: { select: { id: true, name: true } },
+      destinationCountry: { select: { name: true, code: true } },
+      currency: { select: { code: true, symbol: true } },
+      _count: { select: { quotations: true } },
+      ...(isSupplierViewer
+        ? {
+          quotations: {
+            where: { companyId: authUser.companyId },
+            select: { id: true, status: true, createdAt: true },
+            take: 1,
+            orderBy: { createdAt: 'desc' as const },
+          },
+        }
+        : {}),
+    }
 
     const [rfqs, total] = await Promise.all([
       prisma.rFQ.findMany({
@@ -47,13 +76,7 @@ export async function GET(req: NextRequest) {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
-          buyer: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-          category: { select: { id: true, name: true } },
-          destinationCountry: { select: { name: true, code: true } },
-          currency: { select: { code: true, symbol: true } },
-          _count: { select: { quotations: true } },
-        },
+        include,
       }),
       prisma.rFQ.count({ where }),
     ])

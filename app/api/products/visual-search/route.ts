@@ -3,6 +3,7 @@ import prisma from '@/lib/db/prisma'
 import { ApiError } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { ALLOWED_IMAGE_TYPES, uploadImage, UPLOAD_FOLDERS } from '@/lib/storage'
+import { analyzeMarketplaceSearchImage } from '@/lib/ai/google-marketplace-search'
 
 function normalizeTerms(value: string) {
   return value
@@ -80,7 +81,13 @@ export async function POST(req: NextRequest) {
       quality: 82,
     })
 
-    const terms = uniqueTerms(file.name, hint)
+    const analysis = await analyzeMarketplaceSearchImage({
+      buffer,
+      mimeType: file.type,
+      fileName: file.name,
+      hint,
+    })
+    const terms = analysis.extractedTags || uniqueTerms(file.name, hint)
     const fallbackTerms = terms.length ? terms : normalizeTerms('featured marketplace products')
 
     const candidates = await prisma.product.findMany({
@@ -132,9 +139,9 @@ export async function POST(req: NextRequest) {
     return successResponse({
       image: uploaded,
       extractedTags: fallbackTerms,
-      searchQuery: fallbackTerms.join(' '),
+      searchQuery: analysis.searchQuery || fallbackTerms.join(' '),
       matches: relatedProducts,
-      note: 'Visual matching is powered by stored image upload, extracted terms, optional hints, and marketplace metadata scoring.',
+      note: analysis.note || 'AI image search analyzed the uploaded image and matched it against marketplace metadata.',
     })
   } catch (error) {
     return handleApiError(error)

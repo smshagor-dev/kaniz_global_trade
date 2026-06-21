@@ -32,6 +32,14 @@ export async function POST(
       throw new ApiError(403, 'Access denied')
     }
 
+    if (action === 'ACCEPT' && !['SENT', 'VIEWED', 'REVISED'].includes(quotation.status)) {
+      throw new ApiError(409, 'Only pending quotations can be accepted')
+    }
+
+    if (action === 'REJECT' && !['SENT', 'VIEWED', 'REVISED'].includes(quotation.status)) {
+      throw new ApiError(409, 'Only pending quotations can be rejected')
+    }
+
     const updateData: Record<string, unknown> = {}
 
     if (action === 'VIEW') {

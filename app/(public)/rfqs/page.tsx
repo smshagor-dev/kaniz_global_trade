@@ -3,6 +3,7 @@ import prisma from '@/lib/db/prisma'
 import { FileText, Plus, MapPin, Calendar, Package, ArrowRight } from 'lucide-react'
 import type { Metadata } from 'next'
 import { CurrencyAmount } from '@/components/currency/currency-amount'
+import { buildPublicActiveRFQWhere } from '@/lib/rfqs/visibility'
 
 export const metadata: Metadata = {
   title: 'Request for Quotation (RFQ) Board',
@@ -19,12 +20,7 @@ export default async function RFQsPage({ searchParams }: Props) {
   const limit = 20
   const skip  = (page - 1) * limit
 
-  const where: Record<string, unknown> = {
-    status: 'OPEN',
-    isPublic: true,
-    deletedAt: null,
-    expiresAt: { gt: new Date() },
-  }
+  const where: Record<string, unknown> = buildPublicActiveRFQWhere()
   if (categoryId) where.categoryId = categoryId
 
   const [rfqs, total, categories] = await Promise.all([
@@ -55,7 +51,7 @@ export default async function RFQsPage({ searchParams }: Props) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">RFQ Board</h1>
-          <p className="text-sm text-gray-500 mt-1">{total.toLocaleString()} open requests for quotation</p>
+          <p className="text-sm text-gray-500 mt-1">{total.toLocaleString()} active requests for quotation</p>
         </div>
         <Link
           href="/rfqs/create"
@@ -103,7 +99,13 @@ export default async function RFQsPage({ searchParams }: Props) {
                     {rfq.category && (
                       <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-medium">{rfq.category.name}</span>
                     )}
-                    <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded font-medium">Open</span>
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                      rfq.status === 'RECEIVING_QUOTATIONS'
+                        ? 'bg-violet-50 text-violet-700'
+                        : 'bg-green-50 text-green-700'
+                    }`}>
+                      {rfq.status === 'RECEIVING_QUOTATIONS' ? 'Receiving Quotations' : 'Open'}
+                    </span>
                   </div>
                   <h3 className="font-bold text-gray-900 mb-1">{rfq.productName}</h3>
                   <div className="flex flex-wrap gap-3 text-sm text-gray-500">

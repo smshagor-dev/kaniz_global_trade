@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { post } from '@/lib/utils/api-client'
 import { LoadingButton } from '@/components/ui/loading-button'
+import { useCurrentUser, useIsAdmin, useIsAuthenticated, useIsBuyer } from '@/store/auth'
 
 type Option = {
   id: string
@@ -23,6 +24,11 @@ export function RFQCreateForm({
   currencies: Option[]
 }) {
   const router = useRouter()
+  const [hydrated, setHydrated] = useState(false)
+  const isAuthenticated = useIsAuthenticated()
+  const isBuyer = useIsBuyer()
+  const isAdmin = useIsAdmin()
+  const user = useCurrentUser()
   const [form, setForm] = useState({
     categoryId: '',
     productName: '',
@@ -37,8 +43,26 @@ export function RFQCreateForm({
   })
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    setHydrated(true)
+  }, [])
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    if (!hydrated) return
+
+    if (!isAuthenticated) {
+      toast.error('Please sign in as a buyer to post an RFQ')
+      router.push('/auth/login?redirect=/rfqs/create')
+      return
+    }
+
+    if (!isBuyer && !isAdmin) {
+      toast.error('Only buyer or admin accounts can create RFQs')
+      return
+    }
+
     setLoading(true)
     try {
       await post('/rfqs', {
@@ -161,10 +185,16 @@ export function RFQCreateForm({
         type="submit"
         loading={loading}
         loadingText="Submitting RFQ..."
+        disabled={!hydrated || !isAuthenticated || (!isBuyer && !isAdmin)}
         className="inline-flex h-12 items-center justify-center rounded-full bg-gradient-to-r from-orange-500 to-red-500 px-6 text-sm font-semibold text-white shadow-[0_18px_34px_-18px_rgba(249,115,22,0.7)]"
       >
         Submit RFQ
       </LoadingButton>
+      {hydrated && isAuthenticated && !isBuyer && !isAdmin ? (
+        <p className="text-sm text-amber-700">
+          Signed in as {user?.firstName} {user?.lastName}. Switch to a buyer or admin account to submit this RFQ.
+        </p>
+      ) : null}
     </form>
   )
 }

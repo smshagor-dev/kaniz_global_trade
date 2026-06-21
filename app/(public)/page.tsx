@@ -3,6 +3,7 @@ import prisma from '@/lib/db/prisma'
 import { MarketplaceDiscovery } from '@/components/public/home/marketplace-discovery'
 import { HomeMarketplaceFeed } from '@/components/public/home/home-marketplace-feed'
 import { getMarketplaceFeedPage, normalizeMarketplaceQuery } from '@/lib/home-marketplace-feed'
+import { getSettingsMap } from '@/lib/settings/system'
 import {
   ArrowRight,
   CheckCircle,
@@ -19,6 +20,49 @@ import {
 
 interface HomePageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+type HomeSettings = {
+  discoveryEnabled: boolean
+  statsBarEnabled: boolean
+  frequentSearchesEnabled: boolean
+  recommendedProductsEnabled: boolean
+  recentProductsEnabled: boolean
+  hotCampaignsEnabled: boolean
+  verifiedSuppliersEnabled: boolean
+  topSuppliersEnabled: boolean
+  newArrivalsEnabled: boolean
+  marketplaceFeedEnabled: boolean
+  categoryLimit: number
+  featuredProductLimit: number
+  companyLimit: number
+  campaignLimit: number
+  recentProductLimit: number
+  finalCtaTitle: string
+  finalCtaText: string
+  finalCtaButtonLabel: string
+  finalCtaButtonLink: string
+  discoveryTitle: string
+  discoveryHelpText: string
+  discoveryTrendingKeywords: string[]
+  discoverySuggestionPool: string[]
+  discoveryRecentFallback: string[]
+  discoveryPopularTags: string[]
+  frequentSearchItems: string[]
+  frequentSearchTitle: string
+  frequentSearchSubtitle: string
+  recommendedTitle: string
+  recommendedSubtitle: string
+  recentTitle: string
+  recentSubtitle: string
+  campaignTitle: string
+  campaignSubtitle: string
+  verifiedSuppliersTitle: string
+  verifiedSuppliersSubtitle: string
+  topSuppliersTitle: string
+  topSuppliersSubtitle: string
+  newArrivalsTitle: string
+  newArrivalsSubtitle: string
 }
 
 type HomeCategory = {
@@ -41,12 +85,116 @@ function pickParam(value: string | string[] | undefined) {
   return ''
 }
 
-async function getHomeData() {
+function boolValue(value: string | undefined, fallback = true) {
+  if (value == null || value === '') return fallback
+  return value === 'true'
+}
+
+function numberValue(value: string | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function listValue(value: string | undefined, fallback: string[]) {
+  if (!value) return fallback
+  const parsed = value.split(',').map((item) => item.trim()).filter(Boolean)
+  return parsed.length ? parsed : fallback
+}
+
+async function getHomeSettings(): Promise<HomeSettings> {
+  const settings = await getSettingsMap([
+    'HOME_DISCOVERY_ENABLED',
+    'HOME_STATS_BAR_ENABLED',
+    'HOME_FREQUENT_SEARCHES_ENABLED',
+    'HOME_RECOMMENDED_PRODUCTS_ENABLED',
+    'HOME_RECENT_PRODUCTS_ENABLED',
+    'HOME_HOT_CAMPAIGNS_ENABLED',
+    'HOME_VERIFIED_SUPPLIERS_ENABLED',
+    'HOME_TOP_SUPPLIERS_ENABLED',
+    'HOME_NEW_ARRIVALS_ENABLED',
+    'HOME_MARKETPLACE_FEED_ENABLED',
+    'HOME_CATEGORY_LIMIT',
+    'HOME_FEATURED_PRODUCT_LIMIT',
+    'HOME_COMPANY_LIMIT',
+    'HOME_CAMPAIGN_LIMIT',
+    'HOME_RECENT_PRODUCT_LIMIT',
+    'HOME_FINAL_CTA_TITLE',
+    'HOME_FINAL_CTA_TEXT',
+    'HOME_FINAL_CTA_BUTTON_LABEL',
+    'HOME_FINAL_CTA_BUTTON_LINK',
+    'HOME_DISCOVERY_TITLE',
+    'HOME_DISCOVERY_HELP_TEXT',
+    'HOME_DISCOVERY_TRENDING_KEYWORDS',
+    'HOME_DISCOVERY_SUGGESTION_POOL',
+    'HOME_DISCOVERY_RECENT_FALLBACK',
+    'HOME_DISCOVERY_POPULAR_TAGS',
+    'HOME_FREQUENT_SEARCH_ITEMS',
+    'HOME_FREQUENT_SEARCH_TITLE',
+    'HOME_FREQUENT_SEARCH_SUBTITLE',
+    'HOME_RECOMMENDED_TITLE',
+    'HOME_RECOMMENDED_SUBTITLE',
+    'HOME_RECENT_TITLE',
+    'HOME_RECENT_SUBTITLE',
+    'HOME_CAMPAIGN_TITLE',
+    'HOME_CAMPAIGN_SUBTITLE',
+    'HOME_VERIFIED_SUPPLIERS_TITLE',
+    'HOME_VERIFIED_SUPPLIERS_SUBTITLE',
+    'HOME_TOP_SUPPLIERS_TITLE',
+    'HOME_TOP_SUPPLIERS_SUBTITLE',
+    'HOME_NEW_ARRIVALS_TITLE',
+    'HOME_NEW_ARRIVALS_SUBTITLE',
+  ])
+
+  return {
+    discoveryEnabled: boolValue(settings.HOME_DISCOVERY_ENABLED, true),
+    statsBarEnabled: boolValue(settings.HOME_STATS_BAR_ENABLED, true),
+    frequentSearchesEnabled: boolValue(settings.HOME_FREQUENT_SEARCHES_ENABLED, true),
+    recommendedProductsEnabled: boolValue(settings.HOME_RECOMMENDED_PRODUCTS_ENABLED, true),
+    recentProductsEnabled: boolValue(settings.HOME_RECENT_PRODUCTS_ENABLED, true),
+    hotCampaignsEnabled: boolValue(settings.HOME_HOT_CAMPAIGNS_ENABLED, true),
+    verifiedSuppliersEnabled: boolValue(settings.HOME_VERIFIED_SUPPLIERS_ENABLED, true),
+    topSuppliersEnabled: boolValue(settings.HOME_TOP_SUPPLIERS_ENABLED, true),
+    newArrivalsEnabled: boolValue(settings.HOME_NEW_ARRIVALS_ENABLED, true),
+    marketplaceFeedEnabled: boolValue(settings.HOME_MARKETPLACE_FEED_ENABLED, true),
+    categoryLimit: Math.max(1, numberValue(settings.HOME_CATEGORY_LIMIT, 8)),
+    featuredProductLimit: Math.max(1, numberValue(settings.HOME_FEATURED_PRODUCT_LIMIT, 8)),
+    companyLimit: Math.max(1, numberValue(settings.HOME_COMPANY_LIMIT, 8)),
+    campaignLimit: Math.max(1, numberValue(settings.HOME_CAMPAIGN_LIMIT, 4)),
+    recentProductLimit: Math.max(1, numberValue(settings.HOME_RECENT_PRODUCT_LIMIT, 8)),
+    finalCtaTitle: settings.HOME_FINAL_CTA_TITLE || "Can't Find What You Need?",
+    finalCtaText: settings.HOME_FINAL_CTA_TEXT || 'Post a free RFQ and let verified suppliers come to you with their best offers.',
+    finalCtaButtonLabel: settings.HOME_FINAL_CTA_BUTTON_LABEL || 'Post a Free RFQ',
+    finalCtaButtonLink: settings.HOME_FINAL_CTA_BUTTON_LINK || '/rfqs/create',
+    discoveryTitle: settings.HOME_DISCOVERY_TITLE || 'AI Mode',
+    discoveryHelpText: settings.HOME_DISCOVERY_HELP_TEXT || 'Find products, suppliers, and RFQs using smart search or image search.',
+    discoveryTrendingKeywords: listValue(settings.HOME_DISCOVERY_TRENDING_KEYWORDS, ['solar street light', 'cotton t-shirt', 'smart watch', 'industrial machinery', 'home textiles', 'packaging box']),
+    discoverySuggestionPool: listValue(settings.HOME_DISCOVERY_SUGGESTION_POOL, ['Smart watch suppliers', 'Cotton t-shirt wholesale', 'Solar light manufacturer', 'Packaging box export', 'Leather shoes supplier', 'Agricultural machinery', 'Construction materials', 'Mobile accessories']),
+    discoveryRecentFallback: listValue(settings.HOME_DISCOVERY_RECENT_FALLBACK, ['wireless earbuds', 'industrial pumps', 'cotton socks']),
+    discoveryPopularTags: listValue(settings.HOME_DISCOVERY_POPULAR_TAGS, ['solar street light', 'cotton t-shirt', 'smart watch', 'industrial machinery', 'home textiles']),
+    frequentSearchItems: listValue(settings.HOME_FREQUENT_SEARCH_ITEMS, ['Cotton T-shirts', 'Industrial Machinery', 'Leather Shoes', 'Solar Lights', 'Packaging Boxes', 'Smart Watches', 'Mobile Accessories', 'Home Textiles']),
+    frequentSearchTitle: settings.HOME_FREQUENT_SEARCH_TITLE || 'Frequently Searched',
+    frequentSearchSubtitle: settings.HOME_FREQUENT_SEARCH_SUBTITLE || 'Popular sourcing shortcuts buyers use to jump directly into high-demand categories.',
+    recommendedTitle: settings.HOME_RECOMMENDED_TITLE || 'Recommended Products',
+    recommendedSubtitle: settings.HOME_RECOMMENDED_SUBTITLE || 'Top-performing listings from verified marketplace suppliers.',
+    recentTitle: settings.HOME_RECENT_TITLE || 'Recently Added',
+    recentSubtitle: settings.HOME_RECENT_SUBTITLE || 'Freshly approved products added by active marketplace suppliers.',
+    campaignTitle: settings.HOME_CAMPAIGN_TITLE || 'Hot Campaigns',
+    campaignSubtitle: settings.HOME_CAMPAIGN_SUBTITLE || 'Sponsored placements and high-visibility product promotions.',
+    verifiedSuppliersTitle: settings.HOME_VERIFIED_SUPPLIERS_TITLE || 'Verified Suppliers',
+    verifiedSuppliersSubtitle: settings.HOME_VERIFIED_SUPPLIERS_SUBTITLE || 'Trade with confidence through verified companies and active catalogs.',
+    topSuppliersTitle: settings.HOME_TOP_SUPPLIERS_TITLE || 'Top Ranking Suppliers',
+    topSuppliersSubtitle: settings.HOME_TOP_SUPPLIERS_SUBTITLE || 'High-visibility verified suppliers with strong catalog depth and buyer activity.',
+    newArrivalsTitle: settings.HOME_NEW_ARRIVALS_TITLE || 'New Arrival Products',
+    newArrivalsSubtitle: settings.HOME_NEW_ARRIVALS_SUBTITLE || 'Fresh marketplace listings recently approved and ready for sourcing.',
+  }
+}
+
+async function getHomeData(settings: HomeSettings) {
   const [categories, featuredProducts, verifiedCompanies, sponsoredCampaigns, recentProducts, stats] = await Promise.all([
     prisma.category.findMany({
       where: { isActive: true, parentId: null, approvalStatus: 'APPROVED' },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      take: 8,
+      take: settings.categoryLimit,
       select: {
         id: true,
         name: true,
@@ -77,7 +225,7 @@ async function getHomeData() {
           },
         ],
       },
-      take: 8,
+      take: settings.featuredProductLimit,
       orderBy: [{ totalViews: 'desc' }, { createdAt: 'desc' }],
       include: {
         images: { where: { isPrimary: true }, take: 1 },
@@ -87,7 +235,7 @@ async function getHomeData() {
     }),
     prisma.company.findMany({
       where: { status: 'ACTIVE', isVerified: true, deletedAt: null },
-      take: 8,
+      take: settings.companyLimit,
       orderBy: [{ isPremium: 'desc' }, { totalViews: 'desc' }],
       select: {
         id: true,
@@ -108,7 +256,7 @@ async function getHomeData() {
         startsAt: { lte: new Date() },
         endsAt: { gte: new Date() },
       },
-      take: 4,
+      take: settings.campaignLimit,
       orderBy: [{ bidAmount: 'desc' }],
       include: {
         company: { select: { name: true, slug: true } },
@@ -136,7 +284,7 @@ async function getHomeData() {
           },
         ],
       },
-      take: 8,
+      take: settings.recentProductLimit,
       orderBy: [{ createdAt: 'desc' }],
       include: {
         images: { where: { isPrimary: true }, take: 1 },
@@ -157,6 +305,7 @@ async function getHomeData() {
 
 export default async function HomePage({ searchParams }: HomePageProps) {
   const rawSearchParams = await searchParams
+  const homeSettings = await getHomeSettings()
   const feedQuery = normalizeMarketplaceQuery({
     categoryId: pickParam(rawSearchParams.feedCategory),
     page: pickParam(rawSearchParams.feedPage),
@@ -165,7 +314,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   })
 
   const initialFeedPromise = getMarketplaceFeedPage(feedQuery)
-  const { categories, featuredProducts, verifiedCompanies, sponsoredCampaigns, recentProducts, stats } = await getHomeData()
+  const { categories, featuredProducts, verifiedCompanies, sponsoredCampaigns, recentProducts, stats } = await getHomeData(homeSettings)
   const initialFeed = await initialFeedPromise
   const [companyCount, productCount, userCount, rfqCount] = stats
 
@@ -191,19 +340,38 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     .slice(0, 10)
 
   const frequentSearches = [
-    { label: 'Cotton T-shirts', href: '/products?q=Cotton%20T-shirts' },
-    { label: 'Industrial Machinery', href: '/products?q=Industrial%20Machinery' },
-    { label: 'Leather Shoes', href: '/products?q=Leather%20Shoes' },
-    { label: 'Solar Lights', href: '/products?q=Solar%20Lights' },
-    { label: 'Packaging Boxes', href: '/products?q=Packaging%20Boxes' },
-    { label: 'Smart Watches', href: '/products?q=Smart%20Watches' },
-    { label: 'Mobile Accessories', href: '/products?q=Mobile%20Accessories' },
-    { label: 'Home Textiles', href: '/products?q=Home%20Textiles' },
+    ...homeSettings.frequentSearchItems.map((label) => ({
+      label,
+      href: `/products?q=${encodeURIComponent(label)}`,
+    })),
   ]
+
+  const dynamicProductTags = Array.from(
+    new Set(
+      [...featuredProducts, ...recentProducts]
+        .flatMap((product) => (product.tags || '').split(','))
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 8)
+
+  const homePopularTags = Array.from(new Set([
+    ...homeSettings.discoveryPopularTags,
+    ...dynamicProductTags,
+  ])).slice(0, 8)
 
   return (
     <>
-      <MarketplaceDiscovery />
+      {homeSettings.discoveryEnabled ? (
+        <MarketplaceDiscovery
+          title={homeSettings.discoveryTitle}
+          helpText={homeSettings.discoveryHelpText}
+          trendingKeywords={homeSettings.discoveryTrendingKeywords}
+          suggestionPool={homeSettings.discoverySuggestionPool}
+          recentSearchFallback={homeSettings.discoveryRecentFallback}
+          popularTags={homePopularTags}
+        />
+      ) : null}
 
       <section className="bg-[linear-gradient(180deg,#fff8f1_0%,#ffffff_100%)] py-10">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
@@ -305,6 +473,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </div>
       </section>
 
+      {homeSettings.statsBarEnabled ? (
       <section className="border-y border-orange-100 bg-white">
         <div className="w-full px-4 py-6 md:px-6 lg:px-8 2xl:px-10">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -329,10 +498,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {homeSettings.frequentSearchesEnabled ? (
       <section className="bg-[linear-gradient(180deg,#fffaf6_0%,#ffffff_100%)] py-16">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
-          <SectionHeader title="Frequently Searched" subtitle="Popular sourcing shortcuts buyers use to jump directly into high-demand categories." href="/products" />
+          <SectionHeader title={homeSettings.frequentSearchTitle} subtitle={homeSettings.frequentSearchSubtitle} href="/products" />
           <div className="mt-8 rounded-[30px] border border-orange-100/80 bg-white p-6 shadow-[0_24px_60px_-42px_rgba(249,115,22,0.2)]">
             <div className="flex flex-wrap gap-3">
               {frequentSearches.map((item) => (
@@ -348,10 +519,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {homeSettings.recommendedProductsEnabled ? (
       <section className="bg-white py-16">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
-          <SectionHeader title="Recommended Products" subtitle="Top-performing listings from verified marketplace suppliers." href="/products?isFeatured=true" />
+          <SectionHeader title={homeSettings.recommendedTitle} subtitle={homeSettings.recommendedSubtitle} href="/products?isFeatured=true" />
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {featuredProducts.map((product) => (
               <Link
@@ -388,10 +561,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {homeSettings.recentProductsEnabled ? (
       <section className="bg-slate-50 py-16">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
-          <SectionHeader title="Recently Added" subtitle="Freshly approved products added by active marketplace suppliers." href="/products?sort=newest" />
+          <SectionHeader title={homeSettings.recentTitle} subtitle={homeSettings.recentSubtitle} href="/products?sort=newest" />
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {recentProducts.map((product) => (
               <Link
@@ -423,10 +598,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {homeSettings.hotCampaignsEnabled ? (
       <section className="bg-slate-50 py-16">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
-          <SectionHeader title="Hot Campaigns" subtitle="Sponsored placements and high-visibility product promotions." href="/products" />
+          <SectionHeader title={homeSettings.campaignTitle} subtitle={homeSettings.campaignSubtitle} href="/products" />
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {sponsoredCampaigns.map((campaign) => (
               <Link
@@ -451,10 +628,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {homeSettings.verifiedSuppliersEnabled ? (
       <section className="bg-white py-16">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
-          <SectionHeader title="Verified Suppliers" subtitle="Trade with confidence through verified companies and active catalogs." href="/companies?verified=true" />
+          <SectionHeader title={homeSettings.verifiedSuppliersTitle} subtitle={homeSettings.verifiedSuppliersSubtitle} href="/companies?verified=true" />
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {verifiedCompanies.map((company) => (
               <Link
@@ -488,10 +667,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {homeSettings.topSuppliersEnabled ? (
       <section className="bg-[linear-gradient(180deg,#fffaf6_0%,#ffffff_100%)] py-16">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
-          <SectionHeader title="Top Ranking Suppliers" subtitle="High-visibility verified suppliers with strong catalog depth and buyer activity." href="/companies?verified=true" />
+          <SectionHeader title={homeSettings.topSuppliersTitle} subtitle={homeSettings.topSuppliersSubtitle} href="/companies?verified=true" />
           <div className="mt-8 grid gap-5 lg:grid-cols-3">
             {verifiedCompanies.slice(0, 3).map((company, index) => (
               <Link
@@ -532,10 +713,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
+      {homeSettings.newArrivalsEnabled ? (
       <section className="bg-white py-16">
         <div className="w-full px-4 md:px-6 lg:px-8 2xl:px-10">
-          <SectionHeader title="New Arrival Products" subtitle="Fresh marketplace listings recently approved and ready for sourcing." href="/products?sort=newest" />
+          <SectionHeader title={homeSettings.newArrivalsTitle} subtitle={homeSettings.newArrivalsSubtitle} href="/products?sort=newest" />
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {recentProducts.map((product) => (
               <Link
@@ -570,24 +753,25 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
       <section className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 py-16 text-white">
         <div className="w-full px-4 text-center md:px-6 lg:px-8 2xl:px-10">
           <Zap className="mx-auto mb-4 h-12 w-12 text-orange-300" />
-          <h2 className="mb-4 text-3xl font-bold">Can&apos;t Find What You Need?</h2>
+          <h2 className="mb-4 text-3xl font-bold">{homeSettings.finalCtaTitle}</h2>
           <p className="mb-8 text-lg text-slate-300">
-            Post a free RFQ and let verified suppliers come to you with their best offers.
+            {homeSettings.finalCtaText}
           </p>
           <Link
-            href="/rfqs/create"
+            href={homeSettings.finalCtaButtonLink}
             className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-4 font-bold text-slate-900 transition-colors hover:bg-orange-50"
           >
-            Post a Free RFQ <ArrowRight className="h-5 w-5" />
+            {homeSettings.finalCtaButtonLabel} <ArrowRight className="h-5 w-5" />
           </Link>
         </div>
       </section>
 
-      <HomeMarketplaceFeed
+      {homeSettings.marketplaceFeedEnabled ? <HomeMarketplaceFeed
         categories={categories.map((category) => ({
           id: category.id,
           name: category.name,
@@ -601,6 +785,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           sort: feedQuery.sort,
         }}
       />
+      : null}
     </>
   )
 }
