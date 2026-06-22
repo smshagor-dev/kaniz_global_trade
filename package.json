@@ -13,7 +13,8 @@
     "db:push": "prisma db push --skip-generate",
     "db:seed": "ts-node -r tsconfig-paths/register --project tsconfig.seed.json prisma/seed.ts",
     "db:studio": "prisma studio",
-    "socket:dev": "ts-node --transpile-only server/index.ts"
+    "socket:dev": "ts-node -r tsconfig-paths/register --project tsconfig.socket.json --transpile-only server/index.ts",
+    "socket:start": "ts-node -r tsconfig-paths/register --project tsconfig.socket.json --transpile-only server/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

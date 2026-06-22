@@ -21,6 +21,7 @@ import {
 } from 'recharts'
 import {
   ArrowUpRight,
+  BadgeCheck,
   Bell,
   BriefcaseBusiness,
   CreditCard,
@@ -88,6 +89,17 @@ interface DashboardOverviewResponse {
 
 const chartColors = ['#0f766e', '#2563eb', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444']
 
+function formatVerificationStatus(status: string) {
+  if (status === 'ADMIN_VERIFIED') return 'Kaniz Global Trade Verified'
+  if (status === 'DOCUMENT_VERIFIED') return 'Document Verified'
+  if (status === 'PREMIUM_VERIFIED') return 'Premium Verified'
+
+  return status
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 export default function DashboardOverviewPage() {
   const { user } = useAuthStore()
   const { data, isLoading } = useQuery({
@@ -132,11 +144,14 @@ export default function DashboardOverviewPage() {
             <p className="text-sm uppercase tracking-[0.22em] text-sky-200/80">Supplier Command Center</p>
             <h1 className="mt-3 text-3xl font-bold">Welcome back, {user?.firstName || 'Supplier'}</h1>
             <p className="mt-3 text-sm text-slate-300">
-              {dashboard.company.name} is currently {dashboard.company.verificationStatus.replace(/_/g, ' ').toLowerCase()}.
+              {dashboard.company.name} is currently {formatVerificationStatus(dashboard.company.verificationStatus).toLowerCase()}.
               {dashboard.company.subscription ? ` ${dashboard.company.subscription.plan.name} plan active until ${new Date(dashboard.company.subscription.currentPeriodEnd).toLocaleDateString()}.` : ' No active subscription found yet.'}
             </p>
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-medium">
-              <span className="rounded-full bg-white/10 px-3 py-1">{dashboard.company.verificationStatus.replace(/_/g, ' ')}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1">
+                {formatVerificationStatus(dashboard.company.verificationStatus)}
+                <BadgeCheck className="h-3.5 w-3.5 text-sky-200" />
+              </span>
               {dashboard.company.subscription && <span className="rounded-full bg-sky-500/20 px-3 py-1 text-sky-100">{dashboard.company.subscription.plan.name}</span>}
               {dashboard.company.isPremium && <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-emerald-100">Premium</span>}
               {dashboard.company.creditProfile?.score != null && <span className="rounded-full bg-amber-500/20 px-3 py-1 text-amber-100">Credit Score {dashboard.company.creditProfile.score}</span>}

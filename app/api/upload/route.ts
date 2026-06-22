@@ -23,6 +23,7 @@ const FOLDER_MAP: Record<string, string> = {
   company_banner:   UPLOAD_FOLDERS.COMPANY_BANNERS,
   company_gallery:  UPLOAD_FOLDERS.COMPANY_GALLERY,
   company_doc:      UPLOAD_FOLDERS.COMPANY_DOCS,
+  inspection_report: UPLOAD_FOLDERS.INSPECTION_REPORTS,
   certificate:      UPLOAD_FOLDERS.CERTIFICATES,
   chat_attachment:  UPLOAD_FOLDERS.CHAT_ATTACHMENTS,
   rfq_attachment:   UPLOAD_FOLDERS.RFQ_ATTACHMENTS,
@@ -49,12 +50,12 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer())
     const size = buffer.length
 
-    const isPrivate = ['company_doc', 'product_doc', 'certificate', 'payment_proof'].includes(type)
+    const isPrivate = ['company_doc', 'product_doc', 'certificate', 'payment_proof', 'inspection_report'].includes(type)
 
     // Validate type & size
     if (ALLOWED_IMAGE_TYPES.includes(mimeType)) {
       if (size > MAX_IMAGE) throw new ApiError(400, 'Image too large. Max 10 MB.')
-      const result = await uploadImage(buffer, folder, file.name)
+      const result = await uploadImage(buffer, folder, file.name, { mimeType })
       return successResponse(result, 'Image uploaded')
     }
 
@@ -67,7 +68,22 @@ export async function POST(req: NextRequest) {
     if (ALLOWED_VIDEO_TYPES.includes(mimeType)) {
       if (size > MAX_VIDEO) throw new ApiError(400, 'Video too large. Max 100 MB.')
       const result = await uploadFile(buffer, folder, file.name, mimeType, false)
-      return successResponse(result, 'Video uploaded')
+      const extension = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '.mp4'
+      const { createVideoThumbnail } = await import('@/lib/media/video-thumbnail')
+      const thumbnailBuffer = type === 'product_video'
+        ? await createVideoThumbnail(buffer, extension)
+        : null
+      const thumbnailUpload = thumbnailBuffer
+        ? await uploadImage(thumbnailBuffer, `${folder}/thumbs`, `${file.name}-thumb.jpg`, { width: 1280, height: 720, quality: 82 })
+        : null
+
+      return successResponse(
+        {
+          ...result,
+          thumbnailUrl: thumbnailUpload?.url || null,
+        },
+        'Video uploaded'
+      )
     }
 
     throw new ApiError(400, 'Unsupported file type')

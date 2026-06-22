@@ -325,7 +325,7 @@ export default function AdminUsersPage() {
           <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
             <h2 className="text-xl font-bold text-slate-950">Delete user</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              This will archive the account and remove it from active admin listings. The user email will be released for future reuse.
+              This will archive the account and remove it from active Kaniz Global Trade listings. The user email will be released for future reuse.
             </p>
             <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-4 text-sm text-red-700">
               {deleteTarget.firstName} {deleteTarget.lastName} ({deleteTarget.email})

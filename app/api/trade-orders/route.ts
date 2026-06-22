@@ -39,6 +39,10 @@ export async function GET(req: NextRequest) {
           escrowAccount: true,
           shipments: { include: { events: { orderBy: { eventTime: 'desc' }, take: 5 } } },
           disputes: true,
+          ratings: {
+            select: { id: true, authorUserId: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+          },
         },
       }),
       prisma.tradeOrder.count({ where }),

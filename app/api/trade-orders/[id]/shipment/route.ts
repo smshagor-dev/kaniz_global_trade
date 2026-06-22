@@ -71,6 +71,9 @@ export async function POST(
     if (order.supplierCompanyId !== authUser.companyId && !authUser.roles.includes(ROLES.SUPER_ADMIN)) {
       throw new ApiError(403, 'Supplier access required')
     }
+    if (!['ESCROW_FUNDED', 'PROCESSING', 'SHIPPED'].includes(order.status)) {
+      throw new ApiError(409, 'Shipment can only be created after escrow is funded and before the order is completed')
+    }
 
     const trackingUrl = await buildTrackingUrl(data.carrier, data.trackingNumber)
     const sync = await syncCarrierTracking(data.carrier, data.trackingNumber)

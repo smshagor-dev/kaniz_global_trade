@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { requireAdmin } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
-import { deleteServicePartner, listServicePartners, upsertServicePartner } from '@/lib/partners/server'
+import { deleteServicePartner, listAdminServicePartners, upsertServicePartner } from '@/lib/partners/server'
 
 const partnerSchema = z.object({
   id: z.string().optional(),
@@ -28,7 +28,7 @@ const deleteSchema = z.object({
 export async function GET(req: NextRequest) {
   try {
     await requireAdmin(req)
-    const partners = await listServicePartners(undefined, true)
+    const partners = await listAdminServicePartners(undefined, true)
     return successResponse(partners, 'Admin partners fetched')
   } catch (error) {
     return handleApiError(error)

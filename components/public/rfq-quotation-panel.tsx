@@ -188,6 +188,9 @@ export function RFQQuotationPanel({
             Status: {existingQuotationStatus?.label || existingQuotation.status}
             {existingQuotation.createdAt ? ` | Submitted ${new Date(existingQuotation.createdAt).toLocaleDateString()}` : ''}
           </p>
+          <p className="mt-2 text-sm leading-6 text-emerald-700">
+            This RFQ already has your supplier response, so the submission form is now locked for this company.
+          </p>
           <div className="mt-3 flex flex-wrap gap-3">
             <Link href="/dashboard/quotations" className="inline-flex h-10 items-center rounded-full bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800">
               View my quotations
@@ -199,81 +202,83 @@ export function RFQQuotationPanel({
         </div>
       ) : null}
 
-      {!company?.id ? (
+      {!company?.id && !existingQuotation ? (
         <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           A primary supplier company is required before you can quote on marketplace RFQs.
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-800">Quoted amount</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.totalPrice}
-            onChange={(event) => setForm((current) => ({ ...current, totalPrice: event.target.value }))}
-            className={inputCls}
-            placeholder="Enter your best offer"
-          />
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
+      {!existingQuotation ? (
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-800">Currency</label>
+            <label className="mb-2 block text-sm font-semibold text-slate-800">Quoted amount</label>
             <input
-              value={form.currencyCode}
-              onChange={(event) => setForm((current) => ({ ...current, currencyCode: event.target.value.toUpperCase() }))}
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.totalPrice}
+              onChange={(event) => setForm((current) => ({ ...current, totalPrice: event.target.value }))}
               className={inputCls}
-              placeholder="USD"
+              placeholder="Enter your best offer"
             />
           </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-800">Currency</label>
+              <input
+                value={form.currencyCode}
+                onChange={(event) => setForm((current) => ({ ...current, currencyCode: event.target.value.toUpperCase() }))}
+                className={inputCls}
+                placeholder="USD"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-800">Delivery time</label>
+              <input
+                value={form.deliveryTime}
+                onChange={(event) => setForm((current) => ({ ...current, deliveryTime: event.target.value }))}
+                className={inputCls}
+                placeholder="e.g. 20 days after deposit"
+              />
+            </div>
+          </div>
+
           <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-800">Delivery time</label>
+            <label className="mb-2 block text-sm font-semibold text-slate-800">Quoted quantity</label>
             <input
-              value={form.deliveryTime}
-              onChange={(event) => setForm((current) => ({ ...current, deliveryTime: event.target.value }))}
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={form.lineQuantity}
+              onChange={(event) => setForm((current) => ({ ...current, lineQuantity: event.target.value }))}
               className={inputCls}
-              placeholder="e.g. 20 days after deposit"
+              placeholder={rfq.quantity}
             />
           </div>
-        </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-800">Quoted quantity</label>
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.lineQuantity}
-            onChange={(event) => setForm((current) => ({ ...current, lineQuantity: event.target.value }))}
-            className={inputCls}
-            placeholder={rfq.quantity}
-          />
-        </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-800">Message</label>
+            <textarea
+              rows={5}
+              value={form.notes}
+              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+              className={`${inputCls} min-h-[120px] resize-y`}
+              placeholder="Share lead time, packaging, payment expectations, and any conditions with the buyer."
+            />
+          </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-semibold text-slate-800">Message</label>
-          <textarea
-            rows={5}
-            value={form.notes}
-            onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-            className={`${inputCls} min-h-[120px] resize-y`}
-            placeholder="Share lead time, packaging, payment expectations, and any conditions with the buyer."
-          />
-        </div>
-
-        <LoadingButton
-          type="submit"
-          loading={loading}
-          disabled={!company?.id || !!existingQuotation}
-          loadingText="Submitting quotation..."
-          className="inline-flex h-11 items-center rounded-full bg-blue-700 px-5 text-sm font-semibold text-white hover:bg-blue-800"
-        >
-          Submit quotation
-        </LoadingButton>
-      </form>
+          <LoadingButton
+            type="submit"
+            loading={loading}
+            disabled={!company?.id}
+            loadingText="Submitting quotation..."
+            className="inline-flex h-11 items-center rounded-full bg-blue-700 px-5 text-sm font-semibold text-white hover:bg-blue-800"
+          >
+            Submit quotation
+          </LoadingButton>
+        </form>
+      ) : null}
     </div>
   )
 }

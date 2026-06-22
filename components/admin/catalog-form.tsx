@@ -210,7 +210,7 @@ export function CatalogForm({ mode, catalogId }: CatalogFormProps) {
         </Link>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{mode === 'create' ? 'Create Catalog' : 'Edit Catalog'}</h1>
-          <p className="mt-1 text-sm text-gray-500">Admin-controlled marketplace catalog management.</p>
+          <p className="mt-1 text-sm text-gray-500">Kaniz Global Trade marketplace catalog management.</p>
         </div>
       </div>
 

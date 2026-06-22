@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
       width: 1400,
       height: 1400,
       quality: 82,
+      mimeType: file.type,
     })
 
     const analysis = await analyzeMarketplaceSearchImage({

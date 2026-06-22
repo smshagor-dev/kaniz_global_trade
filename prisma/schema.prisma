@@ -38,6 +38,19 @@ enum VerificationStatus {
   REJECTED
 }
 
+enum CompanyVerificationInputType {
+  TEXT
+  FILE
+  BOTH
+}
+
+enum CompanyVerificationSubmissionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
 enum ProductStatus {
   DRAFT
   PENDING
@@ -553,6 +566,7 @@ model Company {
   gallery           CompanyGallery[]
   documents         CompanyDocument[]
   verification      CompanyVerification?
+  verificationSubmissions CompanyVerificationSubmission[]
   certificates      CompanyCertificate[]
   factoryInfo       CompanyFactoryInfo?
   tradeInfo         CompanyTradeInfo?
@@ -668,6 +682,49 @@ model CompanyVerification {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
+model CompanyVerificationRequirement {
+  id          String                       @id @default(uuid())
+  title       String
+  description String?                      @db.Text
+  inputType   CompanyVerificationInputType @default(FILE)
+  isRequired  Boolean                      @default(true)
+  isActive    Boolean                      @default(true)
+  sortOrder   Int                          @default(0)
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+
+  submissions CompanyVerificationSubmission[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model CompanyVerificationSubmission {
+  id              String                              @id @default(uuid())
+  companyId       String
+  requirementId   String
+  textValue       String?                             @db.LongText
+  fileUrl         String?                             @db.Text
+  fileStorageKey  String?                             @db.Text
+  fileName        String?
+  fileMimeType    String?
+  status          CompanyVerificationSubmissionStatus @default(DRAFT)
+  adminNotes      String?                             @db.Text
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  createdAt       DateTime                            @default(now())
+  updatedAt       DateTime                            @updatedAt
+
+  company     Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  requirement CompanyVerificationRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, requirementId])
+  @@index([companyId])
+  @@index([requirementId])
+  @@index([status])
+}
+
 model CompanyCertificate {
   id          String    @id @default(uuid())
   companyId   String
@@ -764,6 +821,10 @@ model InspectionReport {
   summary       String?          @db.Text
   findings      String?          @db.LongText
   reportUrl     String?
+  reportStorageKey String?
+  reportFilename String?
+  reportMimeType String?
+  adminReviewNotes String?       @db.Text
   inspectedAt   DateTime?
   verifiedAt    DateTime?
   status        InspectionStatus @default(REQUESTED)
@@ -841,6 +902,7 @@ model Product {
   paymentTerms    ProductPaymentTerm[]
   tradeTerms      ProductTradeTerm[]
   sampleOrders    SampleOrder[]
+  insurancePolicies InsurancePolicy[]
   inquiries       Inquiry[]
   favorites       FavoriteProduct[]
   analytics       ProductAnalytic[]
@@ -2086,7 +2148,8 @@ model LogisticsBooking {
 model InsurancePolicy {
   id               String          @id @default(uuid())
   companyId        String
-  buyerId          String
+  buyerId          String?
+  productId        String?
   tradeOrderId     String?
   sampleOrderId    String?
   partnerId        String?
@@ -2105,17 +2168,19 @@ model InsurancePolicy {
   endsAt           DateTime?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
-
-  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  buyer       User         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  tradeOrder  TradeOrder?  @relation(fields: [tradeOrderId], references: [id], onDelete: SetNull)
-  sampleOrder SampleOrder? @relation(fields: [sampleOrderId], references: [id], onDelete: SetNull)
-  partner     ServicePartner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
-  claims      InsuranceClaim[]
-
-  @@index([companyId])
-  @@index([buyerId])
-  @@index([tradeOrderId])
+  
+    company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+    buyer       User?        @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+    product     Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+    tradeOrder  TradeOrder?  @relation(fields: [tradeOrderId], references: [id], onDelete: SetNull)
+    sampleOrder SampleOrder? @relation(fields: [sampleOrderId], references: [id], onDelete: SetNull)
+    partner     ServicePartner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+    claims      InsuranceClaim[]
+  
+    @@index([companyId])
+    @@index([buyerId])
+    @@index([productId])
+    @@index([tradeOrderId])
   @@index([sampleOrderId])
   @@index([partnerId])
   @@index([status])

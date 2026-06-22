@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
 
       return successResponse(
         null,
-        'Manual payment request submitted. Admin will activate your subscription after verification.',
+        'Manual payment request submitted. Kaniz Global Trade will activate your subscription after verification.',
         undefined,
         201
       )

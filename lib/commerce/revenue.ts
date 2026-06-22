@@ -13,6 +13,7 @@ export async function settleTradeCommission(tradeOrderId: string) {
   })
 
   if (!commission) return null
+  if (commission.status === 'ACCRUED' || commission.status === 'SETTLED') return commission
 
   return prisma.platformCommission.update({
     where: { id: commission.id },

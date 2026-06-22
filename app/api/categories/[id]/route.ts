@@ -36,7 +36,7 @@ export async function PUT(
     if (!category) throw new ApiError(404, 'Category not found')
     if (!userIsAdmin && !userIsSupplier) throw new ApiError(403, 'Access denied')
     if (!userIsAdmin && category.source === 'ADMIN') {
-      throw new ApiError(403, 'Supplier cannot edit admin-created categories')
+        throw new ApiError(403, 'Supplier cannot edit Kaniz Global Trade categories')
     }
     if (!userIsAdmin && category.createdById !== authUser.userId) {
       throw new ApiError(403, 'You can only edit your own categories')
@@ -89,7 +89,7 @@ export async function DELETE(
 ) {
   try {
     const authUser = await requireAuth(req)
-    if (!isAdmin(authUser)) throw new ApiError(403, 'Admin access required')
+    if (!isAdmin(authUser)) throw new ApiError(403, 'Kaniz Global Trade team access required')
     const { id } = await params
 
     const category = await prisma.category.findUnique({

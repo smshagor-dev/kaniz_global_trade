@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
-import prisma from '@/lib/db/prisma'
+import prisma from '../db/prisma'
 
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET!

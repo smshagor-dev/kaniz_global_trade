@@ -26,7 +26,8 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, '')
 }
 
-function serializePartner(partner: {
+function serializePartner(
+  partner: {
   id: string
   type: 'FINANCING' | 'INSURANCE'
   code: string
@@ -48,7 +49,11 @@ function serializePartner(partner: {
     financingRequests?: number
     insurancePolicies?: number
   }
-}) {
+},
+  options?: { includeSecrets?: boolean }
+) {
+  const includeSecrets = options?.includeSecrets ?? false
+
   return {
     id: partner.id,
     type: partner.type,
@@ -59,9 +64,9 @@ function serializePartner(partner: {
     website: partner.website,
     contactEmail: partner.contactEmail,
     apiBaseUrl: partner.apiBaseUrl,
-    apiKey: partner.apiKey || '',
-    apiSecret: partner.apiSecret || '',
-    accessToken: partner.accessToken || '',
+    apiKey: includeSecrets ? partner.apiKey || '' : undefined,
+    apiSecret: includeSecrets ? partner.apiSecret || '' : undefined,
+    accessToken: includeSecrets ? partner.accessToken || '' : undefined,
     metadata: partner.metadata || '',
     isDefault: partner.isDefault,
     isActive: partner.isActive,
@@ -131,7 +136,7 @@ export async function listServicePartners(type?: 'FINANCING' | 'INSURANCE', incl
     },
   })
 
-  return partners.map(serializePartner)
+  return partners.map((partner) => serializePartner(partner))
 }
 
 export async function getDefaultPartner(type: 'FINANCING' | 'INSURANCE') {
@@ -142,6 +147,27 @@ export async function getDefaultPartner(type: 'FINANCING' | 'INSURANCE') {
   })
 
   return partner ? serializePartner(partner) : null
+}
+
+export async function listAdminServicePartners(type?: 'FINANCING' | 'INSURANCE', includeInactive = false) {
+  await ensureServicePartnersSeeded()
+  const partners = await prisma.servicePartner.findMany({
+    where: {
+      ...(type ? { type } : {}),
+      ...(includeInactive ? {} : { isActive: true }),
+    },
+    orderBy: [{ type: 'asc' }, { isDefault: 'desc' }, { name: 'asc' }],
+    include: {
+      _count: {
+        select: {
+          financingRequests: true,
+          insurancePolicies: true,
+        },
+      },
+    },
+  })
+
+  return partners.map((partner) => serializePartner(partner, { includeSecrets: true }))
 }
 
 export async function upsertServicePartner(input: PartnerInput) {
@@ -215,7 +241,7 @@ export async function upsertServicePartner(input: PartnerInput) {
     },
   })
 
-  return refreshed ? serializePartner(refreshed) : null
+  return refreshed ? serializePartner(refreshed, { includeSecrets: true }) : null
 }
 
 export async function deleteServicePartner(id: string) {
@@ -233,7 +259,7 @@ export async function deleteServicePartner(id: string) {
       where: { id },
       data: { isActive: false, isDefault: false },
     })
-    return { mode: 'archived', partner: serializePartner(archived) }
+    return { mode: 'archived', partner: serializePartner(archived, { includeSecrets: true }) }
   }
 
   await prisma.servicePartner.delete({ where: { id } })

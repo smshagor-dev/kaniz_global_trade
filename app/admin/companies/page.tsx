@@ -40,7 +40,7 @@ export default function AdminCompaniesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Companies</h1>
-        <p className="text-sm text-gray-500 mt-1">Admin view of supplier profiles, trust signals, and trade activity.</p>
+        <p className="text-sm text-gray-500 mt-1">Kaniz Global Trade view of supplier profiles, trust signals, and trade activity.</p>
       </div>
 
       <div className="bg-white border border-gray-100 rounded-xl p-4 flex flex-col md:flex-row gap-3">

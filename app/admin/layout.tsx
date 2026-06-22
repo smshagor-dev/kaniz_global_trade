@@ -6,10 +6,11 @@ import { useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
 import { useIsAuthenticated, useIsAdmin, useCurrentUser, useAuthStore } from '@/store/auth'
 import { post } from '@/lib/utils/api-client'
+import { NotificationDropdown } from '@/components/notifications/notification-dropdown'
 import toast from 'react-hot-toast'
 import {
   LayoutDashboard, Building2, Package, Globe, Shield,
-  Flag, LogOut, Globe2, ChevronRight, ChevronDown, CheckSquare, ClipboardCheck, BadgeCheck, Settings, KeyRound,
+  Flag, LogOut, Globe2, ChevronRight, ChevronDown, CheckSquare, ClipboardCheck, BadgeCheck, Settings, KeyRound, Bell,
 } from 'lucide-react'
 
 type NavItem = {
@@ -24,12 +25,14 @@ const navGroups = [
     label: 'Overview',
     items: [
       { href: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+      { href: '/admin/notifications', icon: Bell, label: 'Notifications' },
     ],
   },
   {
     label: 'Access',
     items: [
       { href: '/admin/buyer-verifications', icon: Shield,      label: 'Buyer Verification' },
+      { href: '/admin/company-verification-documents', icon: ClipboardCheck, label: 'Company Verification Docs' },
       { href: '/admin/kyc',                 icon: BadgeCheck,  label: 'KYC Reviews' },
       { href: '/admin/fraud-alerts',        icon: Flag,        label: 'Fraud Alerts' },
       { href: '/admin/roles',               icon: KeyRound,    label: 'Roles & Permissions' },
@@ -78,6 +81,7 @@ const navGroups = [
           { href: '/admin/settings/social', label: 'Social Login' },
           { href: '/admin/settings/email', label: 'Email' },
           { href: '/admin/settings/storage', label: 'Storage' },
+          { href: '/admin/settings/media', label: 'Media & FFmpeg' },
         ],
       },
     ],
@@ -118,7 +122,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Globe2 className="w-6 h-6 text-blue-400" />
           <div>
             <p className="text-sm font-bold text-white">Kaniz Global Trade</p>
-            <p className="text-xs text-gray-500">Admin Panel</p>
+            <p className="text-xs text-gray-500">Kaniz Global Trade Panel</p>
           </div>
         </div>
 
@@ -219,9 +223,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </span>
             ))}
           </div>
-          <Link href="/" className="text-xs text-gray-500 hover:text-blue-700">
+          <div className="flex items-center gap-3">
+            <NotificationDropdown audience="admin" inboxHref="/admin/notifications" />
+            <Link href="/" className="text-xs text-gray-500 hover:text-blue-700">
             View Site →
-          </Link>
+            </Link>
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto p-6">
           {children}

@@ -29,7 +29,7 @@ export function RFQCreateAccessGate({ children }: { children: React.ReactNode })
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-orange-500">Sign in required</p>
         <h2 className="mt-2 text-2xl font-bold text-slate-950">Post RFQs from a buyer account</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
-          RFQ posting is available for logged-in buyers and admins. Sign in to continue, or create a buyer account first.
+          RFQ posting is available for logged-in buyers and Kaniz Global Trade team accounts. Sign in to continue, or create a buyer account first.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Link

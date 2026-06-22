@@ -172,7 +172,7 @@ export async function requireAuth(req: NextRequest): Promise<AuthUser> {
 
 export async function requireAdmin(req: NextRequest): Promise<AuthUser> {
   const user = await requireAuth(req)
-  if (!isAdmin(user)) throw new ApiError(403, 'Admin access required')
+  if (!isAdmin(user)) throw new ApiError(403, 'Kaniz Global Trade team access required')
   return user
 }
 

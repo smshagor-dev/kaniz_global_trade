@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     const userIsSupplier = isSupplier(authUser)
 
     if (!userIsAdmin && !userIsSupplier) {
-      throw new ApiError(403, 'Only admin or suppliers can create categories')
+      throw new ApiError(403, 'Only Kaniz Global Trade or suppliers can create categories')
     }
 
     if (data.parentId) {
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (!userIsAdmin && category.source === 'ADMIN') {
-        throw new ApiError(403, 'Supplier cannot modify admin-created categories')
+        throw new ApiError(403, 'Supplier cannot modify Kaniz Global Trade categories')
       }
 
       if (!userIsAdmin && category.createdById && category.createdById !== authUser.userId) {
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
     })
     return successResponse(
       category,
-      userIsAdmin ? 'Category created' : 'Category submitted for admin approval',
+      userIsAdmin ? 'Category created' : 'Category submitted for Kaniz Global Trade approval',
       undefined,
       201
     )

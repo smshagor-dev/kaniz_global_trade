@@ -49,6 +49,9 @@ export async function POST(
     const { id } = await params
     const body = await req.json()
     const type = (body.type || 'PROFORMA_INVOICE') as TradeDocumentType
+    if (!Object.values(TradeDocumentType).includes(type)) {
+      throw new ApiError(400, 'Invalid trade document type')
+    }
 
     const order = await prisma.tradeOrder.findUnique({
       where: { id },

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import prisma from '@/lib/db/prisma'
 import { requireAuth } from '@/lib/permissions'
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
-import { markAllNotificationsRead } from '@/server/services/notification'
+import { markAllNotificationsRead, markNotificationRead } from '@/server/services/notification'
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,6 +38,13 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const authUser = await requireAuth(req)
+    const body = await req.json().catch(() => null) as { id?: string } | null
+
+    if (body?.id) {
+      await markNotificationRead(body.id, authUser.userId)
+      return successResponse(null, 'Notification marked as read')
+    }
+
     await markAllNotificationsRead(authUser.userId)
     return successResponse(null, 'All notifications marked as read')
   } catch (error) {

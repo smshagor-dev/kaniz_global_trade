@@ -20,7 +20,7 @@ interface ChatRoom {
 }
 
 interface Message {
-  id: string; content: string; type: string; createdAt: string
+  id: string; roomId: string; content: string; type: string; createdAt: string
   senderId: string
   sender: { id: string; firstName: string; lastName: string; avatar?: string }
   attachments: { url: string; name: string }[]
@@ -42,6 +42,8 @@ export default function ChatPage() {
   const [translatingId, setTranslatingId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const typingTimeout  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeRoomRef = useRef<string | null>(null)
+  const previousRoomRef = useRef<string | null>(null)
 
   // Get chat rooms
   const { data: roomsData, refetch: refetchRooms } = useQuery({
@@ -67,16 +69,35 @@ export default function ChatPage() {
   useEffect(() => {
     if (!accessToken) return
 
-    socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
+    const socketUrl =
+      process.env.NEXT_PUBLIC_SOCKET_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : undefined)
+
+    socket = io(socketUrl, {
       auth: { token: accessToken },
-      transports: ['websocket'],
+      path: '/socket.io',
+      transports: ['websocket', 'polling'],
     })
 
-    socket.on('connect', () => setConnected(true))
-    socket.on('disconnect', () => setConnected(false))
+    socket.on('connect', () => {
+      setConnected(true)
+      if (activeRoomRef.current) {
+        socket?.emit('chat:join', { roomId: activeRoomRef.current })
+      }
+    })
+
+    socket.on('disconnect', () => {
+      setConnected(false)
+      setRemoteTyping(false)
+    })
 
     socket.on('message:new', (msg: Message) => {
-      setMessages((prev) => [...prev, msg])
+      if (msg.roomId === activeRoomRef.current) {
+        setMessages((prev) => {
+          if (prev.some((existing) => existing.id === msg.id)) return prev
+          return [...prev, msg]
+        })
+      }
       refetchRooms()
     })
 
@@ -87,7 +108,15 @@ export default function ChatPage() {
       if (userId !== user?.id) setRemoteTyping(false)
     })
 
-    return () => { socket?.disconnect() }
+    socket.on('connect_error', () => {
+      setConnected(false)
+    })
+
+    return () => {
+      if (typingTimeout.current) clearTimeout(typingTimeout.current)
+      socket?.disconnect()
+      socket = null
+    }
   }, [accessToken, refetchRooms, user?.id])
 
   // Auto-scroll
@@ -97,10 +126,23 @@ export default function ChatPage() {
 
   // Join room on select
   useEffect(() => {
+    const previousRoom = previousRoomRef.current
+
+    if (previousRoom && previousRoom !== activeRoom && socket?.connected) {
+      socket.emit('chat:leave', { roomId: previousRoom })
+    }
+
+    if (activeRoom) {
+      setRemoteTyping(false)
+    }
+
     if (activeRoom && socket?.connected) {
       socket.emit('chat:join', { roomId: activeRoom })
     }
-  }, [activeRoom])
+
+    activeRoomRef.current = activeRoom
+    previousRoomRef.current = activeRoom
+  }, [activeRoom, connected])
 
   function sendMessage() {
     if (!input.trim() || !activeRoom || !socket) return

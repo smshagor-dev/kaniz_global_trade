@@ -9,15 +9,17 @@ import { get, post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { CurrencySelector } from '@/components/currency/currency-selector'
+import { NotificationDropdown } from '@/components/notifications/notification-dropdown'
 import {
   LayoutDashboard, Building2, Package, MessageSquare, FileText,
   Quote, Users, CreditCard, BarChart3, Bell, Settings,
-  LogOut, Globe2, Shield, ChevronRight, ShoppingBag, Truck, PackageCheck, Clapperboard, ClipboardCheck, Megaphone, Landmark, BadgeDollarSign, FolderTree,
+  LogOut, Globe2, Shield, ShieldCheck, ChevronRight, ShoppingBag, Truck, PackageCheck, Clapperboard, ClipboardCheck, Megaphone, Landmark, BadgeDollarSign, FolderTree,
 } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard',              icon: LayoutDashboard, label: 'Overview' },
   { href: '/dashboard/company',      icon: Building2,       label: 'Company Profile' },
+  { href: '/dashboard/company-verification', icon: ShieldCheck, label: 'Company Verification' },
   { href: '/dashboard/categories',   icon: FolderTree,      label: 'Categories' },
   { href: '/dashboard/products',     icon: Package,         label: 'Products' },
   { href: '/dashboard/inquiries',    icon: MessageSquare,   label: 'Inquiries' },
@@ -155,9 +157,7 @@ export default function SupplierDashboardLayout({ children }: { children: React.
             <Link href="/" className="text-xs text-gray-500 hover:text-blue-700 flex items-center gap-1">
               <ShoppingBag className="w-3.5 h-3.5" /> View Marketplace
             </Link>
-            <Link href="/dashboard/notifications" className="relative p-2 text-gray-500 hover:text-blue-700">
-              <Bell className="w-5 h-5" />
-            </Link>
+            <NotificationDropdown audience="supplier" inboxHref="/dashboard/notifications" />
           </div>
         </header>
 

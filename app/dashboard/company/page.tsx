@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Building2, ExternalLink, Loader2, Save, ShieldCheck } from 'lucide-react'
 import { get, post, put } from '@/lib/utils/api-client'
+import { BadgeCheck, Building2, ExternalLink, Loader2, Save, ShieldCheck } from 'lucide-react'
 import { LoadingButton } from '@/components/ui/loading-button'
 
 type MyCompanySummary = {
@@ -47,6 +47,14 @@ const businessTypes = [
 ] as const
 
 const inputCls = 'w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-transparent focus:ring-2 focus:ring-blue-400'
+
+function formatVerificationStatus(status: string) {
+  if (status === 'ADMIN_VERIFIED') return 'Kaniz Global Trade Verified'
+  if (status === 'DOCUMENT_VERIFIED') return 'Document Verified'
+  if (status === 'PREMIUM_VERIFIED') return 'Premium Verified'
+
+  return status.replace(/_/g, ' ')
+}
 
 export default function DashboardCompanyPage() {
   const [form, setForm] = useState({
@@ -144,7 +152,7 @@ export default function DashboardCompanyPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       <section className="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-xl">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
@@ -173,7 +181,8 @@ export default function DashboardCompanyPage() {
             {companyDetails?.verificationStatus ? (
               <div className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/15 px-4 py-2.5 text-sm font-medium text-emerald-100">
                 <ShieldCheck className="h-4 w-4" />
-                {companyDetails.verificationStatus.replace(/_/g, ' ')}
+                {formatVerificationStatus(companyDetails.verificationStatus)}
+                <BadgeCheck className="h-4 w-4" />
               </div>
             ) : null}
           </div>

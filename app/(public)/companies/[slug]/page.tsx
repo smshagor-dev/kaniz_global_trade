@@ -5,8 +5,17 @@ import { CheckCircle, MapPin, Globe, Phone, Mail, Star, Package, Users, ArrowRig
 import { InquiryForm } from '@/components/public/products/inquiry-form'
 import type { Metadata } from 'next'
 import { UserHistoryTracker } from '@/components/history/user-history-tracker'
+import { VideoPlayer } from '@/components/media/video-player'
 
 interface Props { params: Promise<{ slug: string }> }
+
+function formatTourDuration(value?: number | null) {
+  if (!value || value <= 0) return null
+  const minutes = Math.floor(value / 60)
+  const seconds = value % 60
+  if (!minutes) return `${seconds}s`
+  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
@@ -163,11 +172,40 @@ export default async function CompanyDetailPage({ params }: Props) {
               </div>
               <div className="grid md:grid-cols-2 gap-4">
                 {company.virtualTours.map((tour) => (
-                  <div key={tour.id} className="space-y-2">
-                    <video src={tour.videoUrl} controls className="w-full rounded-xl bg-gray-100 aspect-video" />
+                  <div key={tour.id} className="space-y-3 rounded-2xl border border-gray-100 p-3">
+                    <VideoPlayer
+                      url={tour.videoUrl}
+                      title={tour.title}
+                      poster={tour.thumbnailUrl}
+                      className="aspect-video w-full overflow-hidden rounded-xl bg-gray-100"
+                      videoClassName="h-full w-full bg-gray-100 object-cover"
+                    />
                     <div>
-                      <p className="font-medium text-gray-900">{tour.title}</p>
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                        <p className="font-medium text-gray-900">{tour.title}</p>
+                        {tour.isFeatured && (
+                          <span className="text-[11px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
+                            Featured
+                          </span>
+                        )}
+                        <span className="text-[11px] bg-gray-50 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full font-medium">
+                          {tour.language.toUpperCase()}
+                        </span>
+                        {formatTourDuration(tour.durationSec) && (
+                          <span className="text-[11px] bg-gray-50 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full font-medium">
+                            {formatTourDuration(tour.durationSec)}
+                          </span>
+                        )}
+                      </div>
                       {tour.description && <p className="text-sm text-gray-600 mt-1">{tour.description}</p>}
+                      <a
+                        href={tour.videoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex mt-3 text-sm text-blue-700 hover:underline"
+                      >
+                        Open video in new tab
+                      </a>
                     </div>
                   </div>
                 ))}
@@ -177,18 +215,43 @@ export default async function CompanyDetailPage({ params }: Props) {
 
           {company.inspectionReports.length > 0 && (
             <div className="bg-white border border-gray-100 rounded-xl p-6">
-              <h2 className="font-bold text-gray-900 mb-4">Third-Party Inspection Reports</h2>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="font-bold text-gray-900">Third-Party Inspection Reports</h2>
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                  {company.inspectionReports.length} trust record{company.inspectionReports.length === 1 ? '' : 's'}
+                </span>
+              </div>
               <div className="space-y-3">
                 {company.inspectionReports.map((report) => (
                   <div key={report.id} className="rounded-xl border border-gray-100 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-semibold text-gray-900">{report.providerName} #{report.reportNumber}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                          <span className={`rounded-full px-2 py-0.5 font-medium ${report.status === 'VERIFIED' ? 'border border-green-200 bg-green-50 text-green-700' : 'border border-blue-200 bg-blue-50 text-blue-700'}`}>
+                            {report.status}
+                          </span>
+                          {report.inspectedAt ? (
+                            <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-medium text-gray-600">
+                              Inspected {new Date(report.inspectedAt).toLocaleDateString()}
+                            </span>
+                          ) : null}
+                          {report.verifiedAt ? (
+                            <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-medium text-gray-600">
+                              Verified {new Date(report.verifiedAt).toLocaleDateString()}
+                            </span>
+                          ) : null}
+                        </div>
                         {report.summary && <p className="text-sm text-gray-600 mt-1">{report.summary}</p>}
+                        {report.reportUrl ? (
+                          <a href={report.reportUrl} target="_blank" rel="noopener noreferrer" className="inline-flex mt-3 text-sm text-blue-700 hover:underline">
+                            Open inspection report
+                          </a>
+                        ) : null}
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-gray-900">{report.score ?? '-'} / 100</p>
-                        <p className="text-xs text-gray-400">{report.status}</p>
+                        <p className="text-xs text-gray-400">{report.inspectorName || 'Third-party auditor'}</p>
                       </div>
                     </div>
                   </div>

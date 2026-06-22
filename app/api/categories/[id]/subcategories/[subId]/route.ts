@@ -33,7 +33,7 @@ export async function PUT(
     if (!subcategory) throw new ApiError(404, 'Sub-category not found')
     if (!userIsAdmin && !userIsSupplier) throw new ApiError(403, 'Access denied')
     if (!userIsAdmin && subcategory.source === 'ADMIN') {
-      throw new ApiError(403, 'Supplier cannot edit admin-created sub-categories')
+        throw new ApiError(403, 'Supplier cannot edit Kaniz Global Trade sub-categories')
     }
     if (!userIsAdmin && subcategory.createdById !== authUser.userId) {
       throw new ApiError(403, 'You can only edit your own sub-categories')
@@ -76,7 +76,7 @@ export async function DELETE(
 ) {
   try {
     const authUser = await requireAuth(req)
-    if (!isAdmin(authUser)) throw new ApiError(403, 'Admin access required')
+    if (!isAdmin(authUser)) throw new ApiError(403, 'Kaniz Global Trade team access required')
     const { id, subId } = await params
 
     const subcategory = await prisma.subCategory.findFirst({

@@ -14,7 +14,7 @@ import { LoadingButton } from '@/components/ui/loading-button'
 import toast from 'react-hot-toast'
 
 const DEMO_ACCOUNTS = [
-  { role: 'Admin', email: 'admin@kanizglobaltrade.com', password: 'Admin@123456' },
+  { role: 'Kaniz Global Trade', email: 'admin@kanizglobaltrade.com', password: 'Admin@123456' },
   { role: 'Supplier', email: 'supplier@kanizglobaltrade.com', password: 'Supplier@123456' },
   { role: 'Buyer', email: 'buyer@kanizglobaltrade.com', password: 'Buyer@123456' },
 ] as const

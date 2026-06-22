@@ -201,6 +201,38 @@ Payment notes:
 - `NEXT_PUBLIC_APP_URL` should use your real app domain so gateway return URLs work correctly.
 - NOWPayments IPN callback endpoint: `/api/payments/nowpayments/callback`
 - SSLCommerz and aamarPay callbacks are also handled through the app API routes.
+- `FFMPEG_PATH` can point to your local `ffmpeg` binary if it is not available in the system `PATH`.
+- `VIDEO_THUMBNAILS_ENABLED=true` lets the upload API auto-generate thumbnails for product videos.
+
+### FFmpeg Setup For Video Player
+
+This project now supports:
+- Direct hosted video playback (`mp4`, `webm`, `ogg`, `mov`)
+- YouTube watch links, shorts links, and `youtu.be` links
+- Automatic video thumbnail generation during product video upload when `ffmpeg` is installed
+
+Windows:
+```bash
+winget install Gyan.FFmpeg
+```
+
+macOS:
+```bash
+brew install ffmpeg
+```
+
+Ubuntu/Debian:
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+If `ffmpeg` is not globally available, set it manually in `.env`:
+
+```env
+FFMPEG_PATH="C:\\ffmpeg\\bin\\ffmpeg.exe"
+VIDEO_THUMBNAILS_ENABLED="true"
+```
 
 ---
 

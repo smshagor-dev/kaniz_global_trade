@@ -108,7 +108,7 @@ export async function expandMarketplaceSearchQuery(query: string, scope: SearchS
     return {
       normalizedQuery: trimmedQuery,
       searchTerms: normalizeTerms([trimmedQuery], maxTerms),
-      note: !enabled ? 'Google AI search disabled in admin settings' : 'Google AI key missing',
+      note: !enabled ? 'Google AI search disabled in Kaniz Global Trade settings' : 'Google AI key missing',
       usedAI: false,
     }
   }
@@ -169,7 +169,7 @@ export async function analyzeMarketplaceSearchImage(input: {
     return {
       extractedTags: fallbackTerms,
       searchQuery: fallbackTerms.join(' '),
-      note: !enabled ? 'Google AI image search disabled in admin settings' : 'Google AI key missing',
+      note: !enabled ? 'Google AI image search disabled in Kaniz Global Trade settings' : 'Google AI key missing',
       usedAI: false,
     }
   }

@@ -42,6 +42,7 @@ export const UPLOAD_FOLDERS = {
   COMPANY_BANNERS: 'companies/banners',
   COMPANY_GALLERY: 'companies/gallery',
   COMPANY_DOCS: 'companies/documents',
+  INSPECTION_REPORTS: 'companies/inspection-reports',
   CERTIFICATES: 'certificates',
   CHAT_ATTACHMENTS: 'chat/attachments',
   RFQ_ATTACHMENTS: 'rfq/attachments',
@@ -60,7 +61,7 @@ export const ALLOWED_DOC_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ]
-export const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg']
+export const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime']
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024 // 10MB
 const MAX_DOC_SIZE = 20 * 1024 * 1024 // 20MB
@@ -74,6 +75,13 @@ export interface UploadResult {
   filename: string
 }
 
+type ImageUploadOptions = {
+  width?: number
+  height?: number
+  quality?: number
+  mimeType?: string
+}
+
 export function validateFileType(
   mimeType: string,
   allowed: string[]
@@ -83,6 +91,45 @@ export function validateFileType(
 
 export function validateFileSize(size: number, maxSize: number): boolean {
   return size <= maxSize
+}
+
+async function optimizeImageBuffer(
+  buffer: Buffer,
+  originalFilename: string,
+  options?: ImageUploadOptions
+) {
+  const { width = 1920, height = 1920, quality = 82, mimeType } = options || {}
+  const normalizedMimeType = mimeType?.toLowerCase() || ''
+  const extension = path.extname(originalFilename).toLowerCase()
+  const transformer = sharp(buffer, { animated: true, limitInputPixels: false }).rotate()
+  const metadata = await transformer.metadata()
+  const isAnimatedGif =
+    (normalizedMimeType === 'image/gif' || extension === '.gif') &&
+    (metadata.pages || 1) > 1
+
+  const resized = transformer.resize(width, height, { fit: 'inside', withoutEnlargement: true })
+
+  if (isAnimatedGif) {
+    const optimized = await resized
+      .gif({ effort: 7, interFrameMaxError: 8, interPaletteMaxError: 3 })
+      .toBuffer()
+
+    return {
+      buffer: optimized,
+      mimeType: 'image/gif',
+      extension: '.gif',
+    }
+  }
+
+  const optimized = await resized
+    .webp({ quality, effort: 6 })
+    .toBuffer()
+
+  return {
+    buffer: optimized,
+    mimeType: 'image/webp',
+    extension: '.webp',
+  }
 }
 
 export async function uploadFile(
@@ -100,11 +147,8 @@ export async function uploadFile(
   let uploadBuffer = buffer
 
   // Auto-optimize images
-  if (ALLOWED_IMAGE_TYPES.includes(mimeType) && mimeType !== 'image/gif') {
-    uploadBuffer = await sharp(buffer)
-      .resize(1920, 1920, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 85 })
-      .toBuffer()
+  if (ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+    uploadBuffer = (await optimizeImageBuffer(buffer, originalFilename, { mimeType })).buffer
   }
 
   await s3.send(
@@ -133,25 +177,20 @@ export async function uploadImage(
   buffer: Buffer,
   folder: string,
   originalFilename: string,
-  options?: { width?: number; height?: number; quality?: number }
+  options?: ImageUploadOptions
 ): Promise<UploadResult> {
   const { s3, bucket, cdnUrl, endpoint } = await getStorageConfig()
-  const { width = 1920, height = 1920, quality = 85 } = options || {}
+  const optimized = await optimizeImageBuffer(buffer, originalFilename, options)
 
-  const optimized = await sharp(buffer)
-    .resize(width, height, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality })
-    .toBuffer()
-
-  const filename = `${uuidv4()}.webp`
+  const filename = `${uuidv4()}${optimized.extension}`
   const key = `${folder}/${filename}`
 
   await s3.send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      Body: optimized,
-      ContentType: 'image/webp',
+      Body: optimized.buffer,
+      ContentType: optimized.mimeType,
       ACL: 'public-read',
       CacheControl: 'max-age=31536000',
     })
@@ -162,8 +201,8 @@ export async function uploadImage(
   return {
     url,
     key,
-    size: optimized.length,
-    mimeType: 'image/webp',
+    size: optimized.buffer.length,
+    mimeType: optimized.mimeType,
     filename,
   }
 }

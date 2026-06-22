@@ -23,14 +23,19 @@ export default function BuyerOverviewPage() {
   })
   const { data: insuranceData } = useQuery({
     queryKey: ['buyer-insurance-preview'],
-    queryFn: () => get<unknown[]>('/insurance-policies'),
+    queryFn: () => get<{ items?: unknown[] }>('/insurance-policies'),
+  })
+  const { data: inspectionsData } = useQuery({
+    queryKey: ['buyer-inspections-preview'],
+    queryFn: () => get<{ stats?: { totalReports?: number } }>('/buyer/inspections'),
   })
 
   const orders = ordersData?.data || []
   const samples = samplesData?.data || []
   const verification = verificationData?.data
-  const logistics = logisticsData?.data || []
-  const insurance = insuranceData?.data || []
+  const logistics = ((logisticsData?.data as { items?: unknown[] } | undefined)?.items || [])
+  const insurance = (insuranceData?.data?.items || [])
+  const inspectionReports = inspectionsData?.data?.stats?.totalReports || 0
 
   const cards = [
     { label: 'Trade Assurance Orders', value: orders.length, href: '/buyer/trade-orders' },
@@ -38,6 +43,7 @@ export default function BuyerOverviewPage() {
     { label: 'Verification Status', value: verification?.status || 'NOT_STARTED', href: '/buyer/verification' },
     { label: 'Logistics Bookings', value: logistics.length, href: '/buyer/logistics' },
     { label: 'Insurance Policies', value: insurance.length, href: '/buyer/insurance' },
+    { label: 'Inspection Reports', value: inspectionReports, href: '/buyer/inspections' },
   ]
 
   return (
@@ -47,7 +53,7 @@ export default function BuyerOverviewPage() {
         <p className="text-sm text-gray-500 mt-1">Manage verification, escrow-protected orders, samples, and shipments.</p>
       </div>
 
-      <div className="grid md:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid md:grid-cols-3 xl:grid-cols-6 gap-4">
         {cards.map((card) => (
           <Link key={card.label} href={card.href} className="bg-white border border-gray-100 rounded-xl p-5 hover:shadow-md transition-shadow">
             <p className="text-sm text-gray-500">{card.label}</p>

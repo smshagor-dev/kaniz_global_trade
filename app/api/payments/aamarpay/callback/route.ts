@@ -3,6 +3,7 @@ import prisma from '@/lib/db/prisma'
 import { sendInvoicePaidEmail } from '@/lib/email'
 import { createNotification } from '@/server/services/notification'
 import { searchAamarPayTransaction } from '@/lib/payment/aamarpay'
+import { failAdCampaignPayment, finalizeAdCampaignPayment, getAdPaymentReturnUrl } from '@/lib/advertising/payment'
 
 type CallbackPayload = Record<string, string>
 
@@ -16,6 +17,7 @@ function parseMetadata(value: string | null | undefined): Record<string, string>
 }
 
 function getRedirectPath(kind: string | undefined, status: 'success' | 'failed' | 'cancelled') {
+  if (kind === 'AD_CAMPAIGN') return getAdPaymentReturnUrl(status, 'aamarpay')
   if (kind === 'TRADE_ORDER') return `/buyer/trade-orders?payment=${status}&gateway=aamarpay`
   if (kind === 'SUBSCRIPTION') return `/dashboard/subscription?payment=${status}&gateway=aamarpay`
   return `/buyer/sample-orders?payment=${status}&gateway=aamarpay`
@@ -271,14 +273,25 @@ async function processCallback(req: NextRequest) {
 
   if (payment.status === 'PAID') {
     if (isBrowserCallback(req)) {
-      const path = getRedirectPath(metadata.kind, 'success')
+      const path = metadata.kind === 'AD_CAMPAIGN'
+        ? getAdPaymentReturnUrl('success', 'aamarpay', metadata.adCampaignId)
+        : getRedirectPath(metadata.kind, 'success')
       return NextResponse.redirect(new URL(path, req.url), { status: 303 })
     }
     return NextResponse.json({ success: true, alreadyProcessed: true })
   }
 
   if (statusCode !== '2' || payStatus !== 'successful') {
-    await markPaymentAsFailed(payment.id, statusCode === '7' ? 'FAILED' : 'CANCELLED', payload)
+    if (metadata.kind === 'AD_CAMPAIGN') {
+      await failAdCampaignPayment(
+        payment.id,
+        payload.reason || payload.pay_status || payload.status_code || 'aamarPay payment failed',
+        payload,
+        statusCode === '7' ? 'FAILED' : 'CANCELLED'
+      )
+    } else {
+      await markPaymentAsFailed(payment.id, statusCode === '7' ? 'FAILED' : 'CANCELLED', payload)
+    }
   } else {
     const transaction = await searchAamarPayTransaction(transactionId)
     const transactionStatusCode = String(transaction.status_code || '')
@@ -288,16 +301,20 @@ async function processCallback(req: NextRequest) {
     const merchantCurrency = String(transaction.currency_merchant || payment.currency).toUpperCase()
 
     if (transactionStatusCode !== '2' || transactionPayStatus !== 'successful') {
-      await markPaymentAsFailed(payment.id, 'FAILED', {
+      const failurePayload = {
         ...payload,
         reason: `Search transaction status: ${transactionStatusCode || 'UNKNOWN'}`,
-      })
+      }
+      if (metadata.kind === 'AD_CAMPAIGN') await failAdCampaignPayment(payment.id, failurePayload.reason, failurePayload, 'FAILED')
+      else await markPaymentAsFailed(payment.id, 'FAILED', failurePayload)
       redirectStatus = 'failed'
     } else if (expectedAmount !== paidAmount || merchantCurrency !== payment.currency.toUpperCase()) {
-      await markPaymentAsFailed(payment.id, 'FAILED', {
+      const failurePayload = {
         ...payload,
         reason: `Amount or currency mismatch. Expected ${expectedAmount} ${payment.currency}, got ${paidAmount} ${merchantCurrency}`,
-      })
+      }
+      if (metadata.kind === 'AD_CAMPAIGN') await failAdCampaignPayment(payment.id, failurePayload.reason, failurePayload, 'FAILED')
+      else await markPaymentAsFailed(payment.id, 'FAILED', failurePayload)
       redirectStatus = 'failed'
     } else {
       const mergedPayload = {
@@ -309,7 +326,9 @@ async function processCallback(req: NextRequest) {
         status_code: String(transaction.status_code || payload.status_code || ''),
       }
 
-      if (metadata.kind === 'TRADE_ORDER' && payment.tradeOrderId) {
+      if (metadata.kind === 'AD_CAMPAIGN') {
+        await finalizeAdCampaignPayment(payment.id, mergedPayload, 'AAMARPAY')
+      } else if (metadata.kind === 'TRADE_ORDER' && payment.tradeOrderId) {
         await finalizeTradeOrder(payment.id, payment.tradeOrderId, mergedPayload)
       } else if (metadata.kind === 'SUBSCRIPTION') {
         await finalizeSubscription(payment.id, mergedPayload, metadata)
@@ -321,7 +340,9 @@ async function processCallback(req: NextRequest) {
   }
 
   if (isBrowserCallback(req)) {
-    const path = getRedirectPath(metadata.kind, redirectStatus)
+    const path = metadata.kind === 'AD_CAMPAIGN'
+      ? getAdPaymentReturnUrl(redirectStatus, 'aamarpay', metadata.adCampaignId)
+      : getRedirectPath(metadata.kind, redirectStatus)
     return NextResponse.redirect(new URL(path, req.url), { status: 303 })
   }
 

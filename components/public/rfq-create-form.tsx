@@ -59,7 +59,7 @@ export function RFQCreateForm({
     }
 
     if (!isBuyer && !isAdmin) {
-      toast.error('Only buyer or admin accounts can create RFQs')
+      toast.error('Only buyer or Kaniz Global Trade team accounts can create RFQs')
       return
     }
 
@@ -192,7 +192,7 @@ export function RFQCreateForm({
       </LoadingButton>
       {hydrated && isAuthenticated && !isBuyer && !isAdmin ? (
         <p className="text-sm text-amber-700">
-          Signed in as {user?.firstName} {user?.lastName}. Switch to a buyer or admin account to submit this RFQ.
+          Signed in as {user?.firstName} {user?.lastName}. Switch to a buyer or Kaniz Global Trade team account to submit this RFQ.
         </p>
       ) : null}
     </form>

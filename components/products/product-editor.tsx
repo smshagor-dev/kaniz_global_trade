@@ -12,6 +12,8 @@ import { ArrowLeft, Check, ExternalLink, FileText, Link2, Loader2, Package, Plus
 import api, { get, post, put } from '@/lib/utils/api-client'
 import { LoadingButton } from '@/components/ui/loading-button'
 import { CKEditorField } from '@/components/ui/ckeditor-field'
+import { VideoPlayer } from '@/components/media/video-player'
+import { getVideoThumbnailUrl, isYouTubeUrl } from '@/lib/media/video'
 
 const productSchema = z.object({
   companyId: z.string().optional(),
@@ -51,6 +53,7 @@ type ProductEditorProps = {
 type CategoryOption = { id: string; name: string }
 type CompanyOption = { id: string; name: string }
 type SupplierCompany = { id: string; name: string } | null
+type UploadAssetResult = { url: string; thumbnailUrl?: string | null }
 type ProductDetails = {
   id: string
   name: string
@@ -317,7 +320,7 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
 
-    return result.data.url as string
+    return result.data as UploadAssetResult
   }
 
   async function handleVideoUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -327,13 +330,13 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
     setUploadingVideos(true)
     try {
       for (const file of Array.from(files)) {
-        const url = await uploadSingleFile(file, 'product_video')
+        const uploaded = await uploadSingleFile(file, 'product_video')
         setVideos((previous) => [
           ...previous,
           {
-            url,
+            url: uploaded.url,
             title: file.name.replace(/\.[^.]+$/, ''),
-            thumbnailUrl: '',
+            thumbnailUrl: uploaded.thumbnailUrl || '',
           },
         ])
       }
@@ -353,8 +356,8 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
 
     setUploadingThumbnail(true)
     try {
-      const url = await uploadSingleFile(file, 'product_image')
-      setValue('thumbnailUrl', url)
+      const uploaded = await uploadSingleFile(file, 'product_image')
+      setValue('thumbnailUrl', uploaded.url)
       toast.success('Thumbnail image uploaded')
     } catch {
       toast.error('Thumbnail upload failed')
@@ -372,7 +375,8 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
     try {
       const uploadedUrls: string[] = []
       for (const file of Array.from(files)) {
-        uploadedUrls.push(await uploadSingleFile(file, 'product_image'))
+        const uploaded = await uploadSingleFile(file, 'product_image')
+        uploadedUrls.push(uploaded.url)
       }
 
       setVideos((previous) => {
@@ -401,8 +405,8 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
 
     setUploadingPdf(true)
     try {
-      const url = await uploadSingleFile(file, 'product_doc')
-      setDocuments([{ name: file.name, url, type: 'PDF_SPECIFICATION' }])
+      const uploaded = await uploadSingleFile(file, 'product_doc')
+      setDocuments([{ name: file.name, url: uploaded.url, type: 'PDF_SPECIFICATION' }])
       toast.success('PDF specification uploaded')
     } catch {
       toast.error('PDF upload failed')
@@ -418,8 +422,8 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
 
     setUploadingSeoImage(true)
     try {
-      const url = await uploadSingleFile(file, 'product_image')
-      setValue('seoImageUrl', url)
+      const uploaded = await uploadSingleFile(file, 'product_image')
+      setValue('seoImageUrl', uploaded.url)
       toast.success('Meta image uploaded')
     } catch {
       toast.error('Meta image upload failed')
@@ -433,13 +437,7 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
     const trimmed = youtubeUrl.trim()
     if (!trimmed) return
 
-    try {
-      const url = new URL(trimmed)
-      if (!['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(url.hostname)) {
-        toast.error('Enter a valid YouTube video or shorts URL')
-        return
-      }
-    } catch {
+    if (!isYouTubeUrl(trimmed)) {
       toast.error('Enter a valid YouTube URL')
       return
     }
@@ -449,7 +447,7 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
       {
         url: trimmed,
         title: 'YouTube Video',
-        thumbnailUrl: previous.length === 1 ? previous[0].thumbnailUrl : '',
+        thumbnailUrl: getVideoThumbnailUrl(trimmed) || '',
       },
     ])
     setYoutubeUrl('')
@@ -507,10 +505,10 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
       const successMessage = response.message || (
         mode === 'create'
           ? isAdminPortal
-            ? 'Product created from admin'
+            ? 'Product created from Kaniz Global Trade'
             : 'Product created and published!'
           : isAdminPortal
-            ? 'Product updated from admin'
+            ? 'Product updated from Kaniz Global Trade'
             : 'Product updated and resubmitted for review'
       )
 
@@ -534,8 +532,8 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
   const pageTitle = mode === 'create' ? 'Add New Product' : 'Edit Product'
   const pageSubtitle = isAdminPortal
     ? mode === 'create'
-      ? 'Create and publish products directly from admin'
-      : 'Update supplier product details from admin'
+      ? 'Create and publish products directly from Kaniz Global Trade'
+      : 'Update supplier product details from Kaniz Global Trade'
     : mode === 'create'
       ? 'Product will be published immediately unless the supplier account is under fraud review'
       : 'Changes will be reviewed before publishing'
@@ -701,13 +699,14 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
               <div className="space-y-3">
                 {videos.map((video, index) => (
                   <div key={`${video.url}-${index}`} className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 md:grid-cols-[220px_minmax(0,1fr)_auto] md:items-center">
-                    {video.url.includes('youtube.com') || video.url.includes('youtu.be') ? (
-                      <div className="flex h-32 w-full items-center justify-center rounded-lg bg-slate-950 px-3 text-center text-sm font-medium text-white">
-                        YouTube / Shorts Link
-                      </div>
-                    ) : (
-                      <video src={video.url} controls className="h-32 w-full rounded-lg bg-slate-950 object-cover" />
-                    )}
+                    <VideoPlayer
+                      url={video.url}
+                      title={video.title || 'Product video preview'}
+                      poster={video.thumbnailUrl}
+                      className="h-32 w-full overflow-hidden rounded-lg bg-slate-950"
+                      iframeClassName="h-full w-full border-0"
+                      videoClassName="h-full w-full bg-slate-950 object-cover"
+                    />
                     <div className="space-y-2">
                       <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Video title</p>
                       <input
@@ -773,7 +772,7 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="mb-3">
                 <h4 className="text-sm font-semibold text-gray-800">Youtube video / shorts link</h4>
-                <p className="mt-1 text-xs text-gray-400">Use proper link without extra parameter. Don&apos;t use short share link/embeded iframe code.</p>
+                <p className="mt-1 text-xs text-gray-400">Paste a normal YouTube watch, shorts, or youtu.be link. The player and thumbnail will be generated automatically.</p>
               </div>
               <div className="flex flex-col gap-3 md:flex-row">
                 <input

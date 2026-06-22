@@ -209,7 +209,7 @@ export default function AdminCategoriesPage() {
               ?.subcategories.find((subcategory) => subcategory.id === subId)?.slug || '',
             isActive: true,
             approvalStatus,
-            rejectedReason: approvalStatus === 'REJECTED' ? 'Rejected by admin review' : null,
+            rejectedReason: approvalStatus === 'REJECTED' ? 'Rejected by Kaniz Global Trade review' : null,
           })
         : put(`/categories/${categoryId}`, {
             name: categories.find((category) => category.id === categoryId)?.name || '',
@@ -220,7 +220,7 @@ export default function AdminCategoriesPage() {
             sortOrder: categories.find((category) => category.id === categoryId)?.sortOrder || 0,
             isActive: categories.find((category) => category.id === categoryId)?.isActive ?? true,
             approvalStatus,
-            rejectedReason: approvalStatus === 'REJECTED' ? 'Rejected by admin review' : null,
+            rejectedReason: approvalStatus === 'REJECTED' ? 'Rejected by Kaniz Global Trade review' : null,
           }),
     onSuccess: () => {
       toast.success('Approval status updated')

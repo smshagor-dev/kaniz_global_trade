@@ -1,6 +1,14 @@
 import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
-import { Building2, CheckCircle, SlidersHorizontal, MapPin, Package } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Building2,
+  CheckCircle,
+  Globe2,
+  MapPin,
+  Package,
+  SlidersHorizontal,
+} from 'lucide-react'
 import type { Metadata } from 'next'
 import { expandMarketplaceSearchQuery } from '@/lib/ai/google-marketplace-search'
 import { UserHistoryTracker } from '@/components/history/user-history-tracker'
@@ -22,12 +30,12 @@ function normalizeParams(params: Record<string, string | string[] | undefined>) 
 }
 
 async function getData(params: Record<string, string>) {
-  const page  = parseInt(params.page || '1')
+  const page = parseInt(params.page || '1')
   const limit = 20
-  const skip  = (page - 1) * limit
+  const skip = (page - 1) * limit
 
   const where: Record<string, unknown> = { status: 'ACTIVE', deletedAt: null }
-  if (params.countryId)    where.countryId    = params.countryId
+  if (params.countryId) where.countryId = params.countryId
   if (params.businessType) where.businessType = params.businessType
   if (params.verified === 'true') where.isVerified = true
   const expanded = params.q ? await expandMarketplaceSearchQuery(params.q, 'companies') : null
@@ -48,7 +56,9 @@ async function getData(params: Record<string, string>) {
 
   const [companies, total, countries, businessTypes] = await Promise.all([
     prisma.company.findMany({
-      where, skip, take: limit,
+      where,
+      skip,
+      take: limit,
       orderBy: [{ isFeatured: 'desc' }, { isPremium: 'desc' }, { totalViews: 'desc' }],
       include: {
         country: { select: { name: true, code: true, flag: true } },
@@ -68,13 +78,24 @@ async function getData(params: Record<string, string>) {
   return { companies, total, countries, businessTypes, page, limit, expanded }
 }
 
+function buildFilterHref(
+  resolved: Record<string, string>,
+  updates: Record<string, string | null | undefined>
+) {
+  const params = new URLSearchParams()
+  Object.entries({ ...resolved, ...updates }).forEach(([key, value]) => {
+    if (value) params.set(key, value)
+  })
+  return `/companies?${params.toString()}`
+}
+
 export default async function CompaniesPage({ searchParams }: Props) {
   const resolved = normalizeParams(await searchParams)
   const { companies, total, countries, businessTypes, page, limit, expanded } = await getData(resolved)
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
+    <div className="min-h-screen bg-[#f6f7f3] px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
       {resolved.q ? (
         <UserHistoryTracker
           payload={{
@@ -92,134 +113,271 @@ export default async function CompaniesPage({ searchParams }: Props) {
           }}
         />
       ) : null}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Find Verified Suppliers</h1>
-        <p className="text-gray-500 text-sm mt-1">{total.toLocaleString()} companies from around the world</p>
-        {resolved.q && expanded?.usedAI ? (
-          <p className="mt-2 text-xs font-medium text-blue-700">AI search active with Google Gemini query expansion.</p>
-        ) : null}
-      </div>
 
-      <div className="flex flex-col lg:flex-row gap-8">
-        {/* Sidebar */}
-        <aside className="lg:w-56 flex-shrink-0">
-          <div className="bg-white border border-gray-100 rounded-xl p-5 sticky top-20">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2 text-sm">
-              <SlidersHorizontal className="w-4 h-4" /> Filters
-            </h3>
-
-            <div className="mb-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Verification</h4>
-              <Link
-                href={`/companies?${new URLSearchParams({ ...resolved, verified: 'true' }).toString()}`}
-                className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded-lg ${resolved.verified === 'true' ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
-              >
-                <CheckCircle className="w-3.5 h-3.5" /> Verified Only
-              </Link>
-            </div>
-
-            <div className="mb-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Business Type</h4>
-              <div className="space-y-1">
-                <Link href="/companies" className={`block text-xs px-2 py-1.5 rounded-lg ${!resolved.businessType ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}>
-                  All Types
-                </Link>
-                {businessTypes.map((bt) => (
-                  <Link
-                    key={bt}
-                    href={`/companies?${new URLSearchParams({ ...resolved, businessType: bt }).toString()}`}
-                    className={`block text-xs px-2 py-1.5 rounded-lg ${resolved.businessType === bt ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    {bt.replace(/_/g, ' ')}
-                  </Link>
-                ))}
-              </div>
-            </div>
-
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="overflow-hidden rounded-[28px] border border-[#d8dfcf] bg-white shadow-[0_18px_50px_rgba(31,41,55,0.05)]">
+          <div className="grid gap-8 px-6 py-8 lg:grid-cols-[minmax(0,1.2fr)_300px] lg:px-8">
             <div>
-              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Country</h4>
-              <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                {countries.map((c) => (
-                  <Link
-                    key={c.id}
-                    href={`/companies?${new URLSearchParams({ ...resolved, countryId: c.id }).toString()}`}
-                    className={`flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-lg ${resolved.countryId === c.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    <span>{c.flag}</span> {c.name}
-                  </Link>
-                ))}
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#d8dfcf] bg-[#f6f7f3] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#516046]">
+                <Globe2 className="h-3.5 w-3.5" />
+                Global Supplier Directory
+              </div>
+              <h1 className="mt-4 max-w-2xl text-3xl font-semibold tracking-tight text-[#1f2937] sm:text-4xl">
+                Find trusted suppliers with a clean, easy-to-scan shortlist
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm leading-7 text-[#5f6b62] sm:text-base">
+                Browse verified companies, compare product focus, and quickly move from research to inquiry without digging through crowded tables.
+              </p>
+              {resolved.q && expanded?.usedAI ? (
+                <p className="mt-4 text-xs font-medium text-[#365446]">
+                  AI-assisted search is expanding your query to surface better supplier matches.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+              <div className="rounded-3xl border border-[#d8dfcf] bg-[#f6f7f3] p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a69]">Suppliers</p>
+                <p className="mt-3 text-3xl font-semibold text-[#1f2937]">{total.toLocaleString()}</p>
+                <p className="mt-1 text-sm text-[#68756b]">Active supplier profiles</p>
+              </div>
+              <div className="rounded-3xl border border-[#d8dfcf] bg-[#f6f7f3] p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a69]">Verified filter</p>
+                <p className="mt-3 text-lg font-semibold text-[#1f2937]">
+                  {resolved.verified === 'true' ? 'Enabled' : 'Available'}
+                </p>
+                <p className="mt-1 text-sm text-[#68756b]">Focus on validated companies</p>
+              </div>
+              <div className="rounded-3xl border border-[#d8dfcf] bg-[#f6f7f3] p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a69]">Search mode</p>
+                <p className="mt-3 text-lg font-semibold text-[#1f2937]">{resolved.q ? 'Filtered' : 'Browse all'}</p>
+                <p className="mt-1 text-sm text-[#68756b]">Simple browsing with clear filters</p>
               </div>
             </div>
           </div>
-        </aside>
+        </section>
 
-        {/* Main */}
-        <main className="flex-1">
-          {companies.length === 0 ? (
-            <div className="text-center py-20">
-              <Building2 className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-600">No companies found</h3>
+        <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="h-fit rounded-[28px] border border-[#d8dfcf] bg-white p-5 shadow-[0_18px_45px_rgba(31,41,55,0.04)]">
+            <div className="flex items-center gap-2 border-b border-[#e5eadf] pb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef2e7] text-[#516046]">
+                <SlidersHorizontal className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-[#1f2937]">Filters</h2>
+                <p className="text-xs text-[#68756b]">Keep supplier discovery focused</p>
+              </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {companies.map((company) => (
-                <Link
-                  key={company.id}
-                  href={`/companies/${company.slug}`}
-                  className="bg-white border border-gray-100 rounded-xl p-5 hover:shadow-md transition-shadow group"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-blue-50 flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {company.logo
-                        ? <img src={company.logo} alt={company.name} className="w-full h-full object-cover" />
-                        : <span className="text-xl font-bold text-blue-700">{company.name[0]}</span>
-                      }
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <h3 className="font-bold text-gray-900 text-sm group-hover:text-blue-700 transition-colors truncate">
-                          {company.name}
-                        </h3>
-                        {company.isVerified && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
-                        {company.isFeatured && (
-                          <span className="bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0">Featured</span>
+
+            <div className="mt-5 space-y-5">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a69]">Verification</h3>
+                <div className="mt-3 space-y-2">
+                  <Link
+                    href={buildFilterHref(resolved, { verified: null, page: null })}
+                    className={`block rounded-2xl border px-3 py-3 text-sm transition ${
+                      resolved.verified !== 'true'
+                        ? 'border-[#cfd8c2] bg-[#eef2e7] font-semibold text-[#1f2937]'
+                        : 'border-[#e5eadf] text-[#566258] hover:border-[#d8dfcf]'
+                    }`}
+                  >
+                    All suppliers
+                  </Link>
+                  <Link
+                    href={buildFilterHref(resolved, { verified: 'true', page: null })}
+                    className={`flex items-center gap-2 rounded-2xl border px-3 py-3 text-sm transition ${
+                      resolved.verified === 'true'
+                        ? 'border-[#cfd8c2] bg-[#eef2e7] font-semibold text-[#1f2937]'
+                        : 'border-[#e5eadf] text-[#566258] hover:border-[#d8dfcf]'
+                    }`}
+                  >
+                    <CheckCircle className="h-4 w-4 text-[#54724f]" />
+                    Verified only
+                  </Link>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a69]">Business type</h3>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={buildFilterHref(resolved, { businessType: null, page: null })}
+                    className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
+                      !resolved.businessType
+                        ? 'border-[#cfd8c2] bg-[#eef2e7] text-[#1f2937]'
+                        : 'border-[#e5eadf] text-[#5f6b62] hover:border-[#d8dfcf]'
+                    }`}
+                  >
+                    All
+                  </Link>
+                  {businessTypes.map((bt) => (
+                    <Link
+                      key={bt}
+                      href={buildFilterHref(resolved, { businessType: bt, page: null })}
+                      className={`rounded-full border px-3 py-2 text-xs font-medium transition ${
+                        resolved.businessType === bt
+                          ? 'border-[#cfd8c2] bg-[#eef2e7] text-[#1f2937]'
+                          : 'border-[#e5eadf] text-[#5f6b62] hover:border-[#d8dfcf]'
+                      }`}
+                    >
+                      {bt.replace(/_/g, ' ')}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d7a69]">Country</h3>
+                <div className="mt-3 space-y-2">
+                  <Link
+                    href={buildFilterHref(resolved, { countryId: null, page: null })}
+                    className={`block rounded-2xl border px-3 py-3 text-sm transition ${
+                      !resolved.countryId
+                        ? 'border-[#cfd8c2] bg-[#eef2e7] font-semibold text-[#1f2937]'
+                        : 'border-[#e5eadf] text-[#566258] hover:border-[#d8dfcf]'
+                    }`}
+                  >
+                    All countries
+                  </Link>
+                  <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                    {countries.map((country) => (
+                      <Link
+                        key={country.id}
+                        href={buildFilterHref(resolved, { countryId: country.id, page: null })}
+                        className={`flex items-center gap-2 rounded-2xl border px-3 py-3 text-sm transition ${
+                          resolved.countryId === country.id
+                            ? 'border-[#cfd8c2] bg-[#eef2e7] font-semibold text-[#1f2937]'
+                            : 'border-[#e5eadf] text-[#566258] hover:border-[#d8dfcf]'
+                        }`}
+                      >
+                        <span>{country.flag}</span>
+                        <span>{country.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <main className="space-y-4">
+            <div className="flex flex-col gap-2 rounded-[28px] border border-[#d8dfcf] bg-white px-5 py-4 shadow-[0_18px_45px_rgba(31,41,55,0.04)] sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-[#1f2937]">Supplier results</h2>
+                <p className="text-sm text-[#68756b]">
+                  {total.toLocaleString()} company{total === 1 ? '' : 'ies'} available
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-[#566258]">
+                {resolved.businessType ? (
+                  <span className="rounded-full bg-[#f3f5ef] px-3 py-2">Type: {resolved.businessType.replace(/_/g, ' ')}</span>
+                ) : null}
+                {resolved.countryId ? <span className="rounded-full bg-[#f3f5ef] px-3 py-2">Country filtered</span> : null}
+                {resolved.verified === 'true' ? <span className="rounded-full bg-[#f3f5ef] px-3 py-2">Verified only</span> : null}
+              </div>
+            </div>
+
+            {companies.length === 0 ? (
+              <div className="rounded-[28px] border border-dashed border-[#d8dfcf] bg-white px-6 py-16 text-center shadow-[0_18px_45px_rgba(31,41,55,0.03)]">
+                <Building2 className="mx-auto h-14 w-14 text-[#a0aa9d]" />
+                <h3 className="mt-4 text-lg font-semibold text-[#1f2937]">No suppliers found</h3>
+                <p className="mt-2 text-sm text-[#68756b]">Try another country, supplier type, or search term.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {companies.map((company) => (
+                  <Link
+                    key={company.id}
+                    href={`/companies/${company.slug}`}
+                    className="group rounded-[28px] border border-[#d8dfcf] bg-white p-5 shadow-[0_18px_45px_rgba(31,41,55,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_24px_55px_rgba(31,41,55,0.08)]"
+                  >
+                    <div className="flex gap-4">
+                      <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-3xl bg-[#eef2e7] text-xl font-semibold text-[#516046]">
+                        {company.logo ? (
+                          <img src={company.logo} alt={company.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <span>{company.name[0]}</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
-                        <MapPin className="w-3 h-3" />
-                        {company.country?.flag} {company.country?.name}
-                        <span className="text-gray-300">•</span>
-                        {company.businessType.replace(/_/g, ' ')}
-                      </div>
-                      {company.mainProducts && (
-                        <p className="text-xs text-gray-600 line-clamp-1 mb-2">{company.mainProducts}</p>
-                      )}
-                      <div className="flex items-center gap-3 text-xs text-gray-400">
-                        <span className="flex items-center gap-1"><Package className="w-3 h-3" />{company._count.products} products</span>
-                        <span>{company.totalInquiries} inquiries</span>
-                        {company._count.reviews > 0 && <span>⭐ {company._count.reviews} reviews</span>}
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="truncate text-lg font-semibold text-[#1f2937] transition group-hover:text-[#384c33]">
+                                {company.name}
+                              </h3>
+                              {company.isVerified ? <CheckCircle className="h-4 w-4 text-[#2f7a4f]" /> : null}
+                              {company.isFeatured ? (
+                                <span className="rounded-full bg-[#edf1e7] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#566258]">
+                                  Featured
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[#5f6b62]">
+                              <span className="inline-flex items-center gap-1.5">
+                                <MapPin className="h-3.5 w-3.5" />
+                                {company.country?.flag} {company.country?.name}
+                              </span>
+                              <span>{company.businessType.replace(/_/g, ' ')}</span>
+                            </div>
+                          </div>
+
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#f3f5ef] px-3 py-1.5 text-xs font-medium text-[#4f5d49]">
+                            View profile
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                          </span>
+                        </div>
+
+                        {company.mainProducts ? (
+                          <p className="mt-4 line-clamp-2 text-sm leading-6 text-[#566258]">{company.mainProducts}</p>
+                        ) : (
+                          <p className="mt-4 text-sm leading-6 text-[#7b857c]">Company product highlights are not listed yet.</p>
+                        )}
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-2xl bg-[#f6f7f3] px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.14em] text-[#7b857c]">Products</p>
+                            <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-[#1f2937]">
+                              <Package className="h-3.5 w-3.5 text-[#54724f]" />
+                              {company._count.products}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl bg-[#f6f7f3] px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.14em] text-[#7b857c]">Inquiries</p>
+                            <p className="mt-1 text-sm font-semibold text-[#1f2937]">{company.totalInquiries}</p>
+                          </div>
+                          <div className="rounded-2xl bg-[#f6f7f3] px-4 py-3">
+                            <p className="text-xs uppercase tracking-[0.14em] text-[#7b857c]">Reviews</p>
+                            <p className="mt-1 text-sm font-semibold text-[#1f2937]">{company._count.reviews}</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
+                  </Link>
+                ))}
+              </div>
+            )}
 
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-8">
-              {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map((p) => (
-                <Link
-                  key={p}
-                  href={`/companies?${new URLSearchParams({ ...resolved, page: String(p) }).toString()}`}
-                  className={`w-9 h-9 flex items-center justify-center rounded-lg text-sm transition-colors ${p === page ? 'bg-blue-700 text-white' : 'border border-gray-200 hover:border-blue-300 text-gray-700'}`}
-                >
-                  {p}
-                </Link>
-              ))}
-            </div>
-          )}
-        </main>
+            {totalPages > 1 ? (
+              <div className="flex flex-wrap justify-center gap-2 pt-2">
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map((p) => (
+                  <Link
+                    key={p}
+                    href={buildFilterHref(resolved, { page: String(p) })}
+                    className={`flex h-11 w-11 items-center justify-center rounded-2xl border text-sm font-semibold transition ${
+                      p === page
+                        ? 'border-[#cfd8c2] bg-[#eef2e7] text-[#1f2937]'
+                        : 'border-[#d8dfcf] bg-white text-[#566258] hover:border-[#c1cbb6]'
+                    }`}
+                  >
+                    {p}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </main>
+        </div>
       </div>
     </div>
   )

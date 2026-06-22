@@ -7,6 +7,7 @@ import { InquiryForm } from '@/components/public/products/inquiry-form'
 import { CurrencyAmount } from '@/components/currency/currency-amount'
 import { CurrencyRange } from '@/components/currency/currency-range'
 import { UserHistoryTracker } from '@/components/history/user-history-tracker'
+import { VideoPlayer } from '@/components/media/video-player'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -282,7 +283,13 @@ export default async function ProductDetailPage({ params }: Props) {
               <div className="grid md:grid-cols-2 gap-4">
                 {product.videos.map((video) => (
                   <div key={video.id} className="space-y-2">
-                    <video src={video.url} controls className="w-full rounded-xl bg-gray-100" />
+                    <VideoPlayer
+                      url={video.url}
+                      title={video.title || product.name}
+                      poster={video.thumbnailUrl}
+                      className="aspect-video w-full overflow-hidden rounded-xl bg-gray-100"
+                      videoClassName="h-full w-full bg-gray-100 object-cover"
+                    />
                     <p className="text-sm text-gray-600">{video.title || product.name}</p>
                   </div>
                 ))}

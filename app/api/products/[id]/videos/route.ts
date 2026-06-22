@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, requireCompanyAccess, ApiError } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
+import { getVideoThumbnailUrl, getVideoProvider } from '@/lib/media/video'
 
 const videosSchema = z.object({
   videos: z.array(
@@ -37,9 +38,11 @@ export async function POST(
     await prisma.productVideo.createMany({
       data: data.videos.map((video) => ({
         productId: id,
-        url: video.url,
-        title: video.title,
-        thumbnailUrl: video.thumbnailUrl,
+        url: video.url.trim(),
+        title: video.title?.trim() || undefined,
+        thumbnailUrl:
+          video.thumbnailUrl?.trim() ||
+          (getVideoProvider(video.url) === 'youtube' ? getVideoThumbnailUrl(video.url) || undefined : undefined),
       })),
     })
 

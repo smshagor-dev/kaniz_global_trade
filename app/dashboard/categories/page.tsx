@@ -128,7 +128,7 @@ export default function SupplierCategoriesPage() {
       })
     },
     onSuccess: () => {
-      toast.success('Saved and submitted for admin approval')
+      toast.success('Saved and submitted for Kaniz Global Trade approval')
       qc.invalidateQueries({ queryKey: ['supplier-categories'] })
       closeModal()
     },
@@ -208,7 +208,7 @@ export default function SupplierCategoriesPage() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Supplier taxonomy</p>
           <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-950">Categories</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-            Create and edit your own categories or sub-categories. Admin-created taxonomy is visible here but locked from supplier editing.
+            Create and edit your own categories or sub-categories. Kaniz Global Trade taxonomy is visible here but locked from supplier editing.
           </p>
         </div>
         <button onClick={openCategoryCreate} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-800">
@@ -446,7 +446,7 @@ function StatusBadge({ status }: { status: 'PENDING' | 'APPROVED' | 'REJECTED' }
 }
 
 function SourceBadge({ source }: { source: 'ADMIN' | 'SUPPLIER' }) {
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${source === 'ADMIN' ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-700'}`}>{source === 'ADMIN' ? 'Admin' : 'Supplier'}</span>
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${source === 'ADMIN' ? 'bg-slate-100 text-slate-700' : 'bg-blue-50 text-blue-700'}`}>{source === 'ADMIN' ? 'Kaniz Global Trade' : 'Supplier'}</span>
 }
 
 const inputCls = 'w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100'

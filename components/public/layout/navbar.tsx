@@ -30,6 +30,7 @@ import { LoginModal } from '@/components/public/auth/login-modal'
 import { useLanguage } from '@/lib/i18n'
 import { get, patch, post } from '@/lib/utils/api-client'
 import { useAuthStore, useIsAdmin, useIsAuthenticated, useIsBuyer, useIsSupplier } from '@/store/auth'
+import { getPreferredNotificationAudience, resolveNotificationHref } from '@/components/notifications/notification-links'
 
 const MARKETPLACE_LINKS = [
   { href: '/products', label: 'All categories', icon: Menu },
@@ -104,8 +105,10 @@ export function Navbar() {
   const [deliveryCountryCode, setDeliveryCountryCode] = useState<CountryOption['code']>('BD')
   const [notifications, setNotifications] = useState<Array<{
     id: string
+    type: string
     title: string
     message: string
+    data?: string | null
     isRead: boolean
     createdAt: string
   }>>([])
@@ -169,12 +172,12 @@ export function Navbar() {
   }, [])
 
   useEffect(() => {
-    if (!isAuth || !notificationsOpen) return
+    if (!isAuth) return
 
     let active = true
     setNotificationsLoading(true)
 
-    get<{ notifications: Array<{ id: string; title: string; message: string; isRead: boolean; createdAt: string }>; unreadCount: number }>('/notifications', { limit: 8 })
+    get<{ notifications: Array<{ id: string; type: string; title: string; message: string; data?: string | null; isRead: boolean; createdAt: string }>; unreadCount: number }>('/notifications', { limit: 8 })
       .then((response) => {
         if (!active) return
         setNotifications(response.data?.notifications || [])
@@ -282,6 +285,25 @@ export function Navbar() {
     router.push(normalized ? `/products?q=${encodeURIComponent(normalized)}` : '/products')
   }
 
+  async function handleOpenNotification(item: { id: string; type: string; data?: string | null; isRead: boolean }) {
+    const href = resolveNotificationHref(item, getPreferredNotificationAudience(user?.roles))
+    setNotificationsOpen(false)
+
+    try {
+      if (!item.isRead) {
+        await patch('/notifications', { id: item.id })
+        setNotifications((current) => current.map((notification) => (
+          notification.id === item.id ? { ...notification, isRead: true } : notification
+        )))
+        setUnreadCount((current) => Math.max(0, current - 1))
+      }
+    } catch {
+      toast.error('Failed to update notification')
+    } finally {
+      router.push(href)
+    }
+  }
+
   function handleOpenLoginModal() {
     if (isLoginPage) {
       setAuthActionLoading('login')
@@ -369,6 +391,7 @@ export function Navbar() {
               unreadCount={unreadCount}
               notificationsLoading={notificationsLoading}
               onMarkAllRead={handleMarkAllRead}
+              onOpenNotification={handleOpenNotification}
               dashboardPath={dashboardPath}
               isBuyer={isBuyer}
               handleLogout={handleLogout}
@@ -467,6 +490,7 @@ export function Navbar() {
                 unreadCount={unreadCount}
                 notificationsLoading={notificationsLoading}
               onMarkAllRead={handleMarkAllRead}
+              onOpenNotification={handleOpenNotification}
               dashboardPath={dashboardPath}
               isBuyer={isBuyer}
               handleLogout={handleLogout}
@@ -1099,6 +1123,7 @@ function HeaderAuth({
   unreadCount,
   notificationsLoading,
   onMarkAllRead,
+  onOpenNotification,
   dashboardPath,
   isBuyer,
   handleLogout,
@@ -1114,10 +1139,11 @@ function HeaderAuth({
   setProfileOpen: React.Dispatch<React.SetStateAction<boolean>>
   notificationsOpen: boolean
   setNotificationsOpen: React.Dispatch<React.SetStateAction<boolean>>
-  notifications: Array<{ id: string; title: string; message: string; isRead: boolean; createdAt: string }>
+  notifications: Array<{ id: string; type: string; title: string; message: string; data?: string | null; isRead: boolean; createdAt: string }>
   unreadCount: number
   notificationsLoading: boolean
   onMarkAllRead: () => Promise<void>
+  onOpenNotification: (item: { id: string; type: string; data?: string | null; isRead: boolean }) => Promise<void>
   dashboardPath: string
   isBuyer: boolean
   handleLogout: () => Promise<void>
@@ -1179,7 +1205,13 @@ function HeaderAuth({
   return (
     <>
       {!compact ? (
-        <div className="relative" ref={notificationRef}>
+        <div
+          className="relative"
+          ref={notificationRef}
+          onMouseEnter={() => setNotificationsOpen(true)}
+          onMouseLeave={() => setNotificationsOpen(false)}
+          onFocus={() => setNotificationsOpen(true)}
+        >
           <button
             type="button"
             onClick={() => setNotificationsOpen((value) => !value)}
@@ -1214,11 +1246,11 @@ function HeaderAuth({
                   <div className="px-3 py-6 text-sm text-slate-500">Loading notifications...</div>
                 ) : notifications.length ? (
                   notifications.map((item) => (
-                    <Link
+                    <button
                       key={item.id}
-                      href="/notifications"
-                      onClick={() => setNotificationsOpen(false)}
-                      className={`block rounded-xl px-3 py-3 transition hover:bg-orange-50 ${item.isRead ? 'text-slate-600' : 'bg-orange-50/60 text-slate-900'}`}
+                      type="button"
+                      onClick={() => onOpenNotification(item)}
+                      className={`block w-full rounded-xl px-3 py-3 text-left transition hover:bg-orange-50 ${item.isRead ? 'text-slate-600' : 'bg-orange-50/60 text-slate-900'}`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -1228,7 +1260,7 @@ function HeaderAuth({
                         {!item.isRead ? <span className="mt-1 h-2.5 w-2.5 rounded-full bg-orange-500" /> : null}
                       </div>
                       <p className="mt-2 text-[11px] text-slate-400">{new Date(item.createdAt).toLocaleString()}</p>
-                    </Link>
+                    </button>
                   ))
                 ) : (
                   <div className="px-3 py-6 text-sm text-slate-500">No notifications yet.</div>

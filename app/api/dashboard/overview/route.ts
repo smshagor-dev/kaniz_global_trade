@@ -3,6 +3,12 @@ import prisma from '@/lib/db/prisma'
 import { requireAuth, ApiError } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 
+function sanitizeProductionCopy(value: string) {
+  return value
+    .replace(/\bADMIN_VERIFIED\b/g, 'KANIZ_GLOBAL_TRADE_VERIFIED')
+    .replace(/\badmin\b/gi, 'Kaniz Global Trade')
+}
+
 export async function GET(req: NextRequest) {
   try {
     const authUser = await requireAuth(req)
@@ -262,7 +268,11 @@ export async function GET(req: NextRequest) {
       },
       topProducts,
       recent: {
-        notifications,
+        notifications: notifications.map((item) => ({
+          ...item,
+          title: sanitizeProductionCopy(item.title),
+          message: sanitizeProductionCopy(item.message),
+        })),
         tradeOrders: recentTradeOrders.map((item) => ({
           ...item,
           totalAmount: Number(item.totalAmount),

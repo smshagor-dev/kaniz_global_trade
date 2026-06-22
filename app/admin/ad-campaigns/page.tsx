@@ -11,6 +11,10 @@ interface Campaign {
   placement: string
   status: string
   budget: number
+  bidAmount?: number
+  paymentStatus?: string | null
+  paymentMethod?: string | null
+  paymentFailureReason?: string | null
   company: { name: string }
 }
 
@@ -71,7 +75,14 @@ export default function AdminAdCampaignsPage() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h2 className="font-semibold text-gray-900">{campaign.title}</h2>
-              <p className="text-sm text-gray-500 mt-1">{campaign.company.name} | {campaign.placement} | Budget ${Number(campaign.budget).toLocaleString()}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {campaign.company.name} | {campaign.placement} | Budget ${Number(campaign.budget).toLocaleString()}
+                {campaign.bidAmount != null ? ` | Bid $${Number(campaign.bidAmount).toLocaleString()}` : ''}
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                Payment {campaign.paymentStatus || 'N/A'}{campaign.paymentMethod ? ` via ${campaign.paymentMethod}` : ''}
+              </p>
+              {campaign.paymentFailureReason ? <p className="text-xs text-red-600 mt-2">{campaign.paymentFailureReason}</p> : null}
             </div>
             <div className="flex gap-2">
               <button onClick={() => update(campaign.id, 'ACTIVE')} className="px-3 py-2 rounded-lg bg-green-700 text-white text-sm">Approve</button>

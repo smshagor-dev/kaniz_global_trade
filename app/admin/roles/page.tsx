@@ -278,7 +278,7 @@ export default function AdminRolesPage() {
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h3 className="text-xl font-bold text-slate-950">Permission matrix</h3>
-                    <p className="mt-1 text-sm text-slate-500">Grouped by module so admins can review access at a glance.</p>
+                    <p className="mt-1 text-sm text-slate-500">Grouped by module so Kaniz Global Trade can review access at a glance.</p>
                   </div>
                   <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
                     {selectedRole.rolePermissions.length} active permissions

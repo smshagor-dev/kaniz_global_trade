@@ -38,12 +38,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const data = schema.parse(await req.json())
     const order = await prisma.tradeOrder.findUnique({ where: { id } })
     if (!order) throw new ApiError(404, 'Trade order not found')
-    if (![order.buyerId, order.supplierCompanyId].includes(authUser.userId) && authUser.companyId !== order.supplierCompanyId && !authUser.roles.includes(ROLES.SUPER_ADMIN)) {
-      if (order.buyerId !== authUser.userId) throw new ApiError(403, 'Access denied')
-    }
+    const isBuyer = order.buyerId === authUser.userId
+    const isSupplier = authUser.companyId === order.supplierCompanyId
+    if (!isBuyer && !isSupplier && !authUser.roles.includes(ROLES.SUPER_ADMIN)) throw new ApiError(403, 'Access denied')
+    if (order.status !== 'COMPLETED') throw new ApiError(409, 'Ratings can only be submitted after the trade order is completed')
+
+    const existingRating = await prisma.transactionRating.findFirst({
+      where: {
+        tradeOrderId: order.id,
+        authorUserId: authUser.userId,
+      },
+    })
+    if (existingRating) throw new ApiError(409, 'You have already submitted a rating for this trade order')
 
     const recipient =
-      order.buyerId === authUser.userId
+      isBuyer
         ? { recipientCompanyId: order.supplierCompanyId, recipientUserId: null }
         : { recipientUserId: order.buyerId, recipientCompanyId: null }
 

@@ -3,6 +3,7 @@ import prisma from '@/lib/db/prisma'
 import { sendInvoicePaidEmail } from '@/lib/email'
 import { createNotification } from '@/server/services/notification'
 import { validateSSLCommerzPayment } from '@/lib/payment/sslcommerz'
+import { failAdCampaignPayment, finalizeAdCampaignPayment, getAdPaymentReturnUrl } from '@/lib/advertising/payment'
 
 type CallbackPayload = Record<string, string>
 
@@ -16,6 +17,7 @@ function parseMetadata(value: string | null | undefined): Record<string, string>
 }
 
 function getRedirectPath(kind: string | undefined, status: 'success' | 'failed' | 'cancelled') {
+  if (kind === 'AD_CAMPAIGN') return getAdPaymentReturnUrl(status, 'sslcommerz')
   if (kind === 'TRADE_ORDER') return `/buyer/trade-orders?payment=${status}&gateway=sslcommerz`
   if (kind === 'SUBSCRIPTION') return `/dashboard/subscription?payment=${status}&gateway=sslcommerz`
   return `/buyer/sample-orders?payment=${status}&gateway=sslcommerz`
@@ -273,16 +275,26 @@ async function processCallback(req: NextRequest) {
 
   if (payment.status === 'PAID') {
     if (isBrowserCallback(req)) {
-      const path = getRedirectPath(metadata.kind, 'success')
+      const path = metadata.kind === 'AD_CAMPAIGN'
+        ? getAdPaymentReturnUrl('success', 'sslcommerz', metadata.adCampaignId)
+        : getRedirectPath(metadata.kind, 'success')
       return NextResponse.redirect(new URL(path, req.url), { status: 303 })
     }
     return NextResponse.json({ success: true, alreadyProcessed: true })
   }
 
   if (callbackStatus === 'FAILED') {
+    if (metadata.kind === 'AD_CAMPAIGN') {
+      await failAdCampaignPayment(payment.id, payload.failedreason || payload.error || payload.status || 'SSLCommerz payment failed', payload, 'FAILED')
+    } else {
     await markPaymentAsFailed(payment.id, 'FAILED', payload)
+    }
   } else if (callbackStatus === 'CANCELLED' || callbackStatus === 'CANCEL') {
+    if (metadata.kind === 'AD_CAMPAIGN') {
+      await failAdCampaignPayment(payment.id, payload.failedreason || payload.error || payload.status || 'SSLCommerz payment cancelled', payload, 'CANCELLED')
+    } else {
     await markPaymentAsFailed(payment.id, 'CANCELLED', payload)
+    }
   } else {
     if (!payload.val_id) {
       return NextResponse.json({ success: false, message: 'val_id missing' }, { status: 400 })
@@ -295,16 +307,20 @@ async function processCallback(req: NextRequest) {
     const paidCurrency = String(validation.currency_type || validation.currency || payload.currency || payment.currency).toUpperCase()
 
     if (!['VALID', 'VALIDATED'].includes(validationStatus)) {
-      await markPaymentAsFailed(payment.id, 'FAILED', {
+      const failurePayload = {
         ...payload,
         failedreason: `Validation status: ${validationStatus || 'UNKNOWN'}`,
-      })
+      }
+      if (metadata.kind === 'AD_CAMPAIGN') await failAdCampaignPayment(payment.id, failurePayload.failedreason, failurePayload, 'FAILED')
+      else await markPaymentAsFailed(payment.id, 'FAILED', failurePayload)
       redirectStatus = 'failed'
     } else if (expectedAmount !== paidAmount || paidCurrency !== payment.currency.toUpperCase()) {
-      await markPaymentAsFailed(payment.id, 'FAILED', {
+      const failurePayload = {
         ...payload,
         failedreason: `Amount or currency mismatch. Expected ${expectedAmount} ${payment.currency}, got ${paidAmount} ${paidCurrency}`,
-      })
+      }
+      if (metadata.kind === 'AD_CAMPAIGN') await failAdCampaignPayment(payment.id, failurePayload.failedreason, failurePayload, 'FAILED')
+      else await markPaymentAsFailed(payment.id, 'FAILED', failurePayload)
       redirectStatus = 'failed'
     } else {
       const mergedPayload = {
@@ -314,7 +330,9 @@ async function processCallback(req: NextRequest) {
         card_type: String(validation.card_type || payload.card_type || ''),
       }
 
-      if (metadata.kind === 'TRADE_ORDER' && payment.tradeOrderId) {
+      if (metadata.kind === 'AD_CAMPAIGN') {
+        await finalizeAdCampaignPayment(payment.id, mergedPayload, 'SSLCOMMERZ')
+      } else if (metadata.kind === 'TRADE_ORDER' && payment.tradeOrderId) {
         await finalizeTradeOrder(payment.id, payment.tradeOrderId, mergedPayload)
       } else if (metadata.kind === 'SUBSCRIPTION') {
         await finalizeSubscription(payment.id, mergedPayload, metadata)
@@ -326,7 +344,9 @@ async function processCallback(req: NextRequest) {
   }
 
   if (isBrowserCallback(req)) {
-    const path = getRedirectPath(metadata.kind, redirectStatus)
+    const path = metadata.kind === 'AD_CAMPAIGN'
+      ? getAdPaymentReturnUrl(redirectStatus, 'sslcommerz', metadata.adCampaignId)
+      : getRedirectPath(metadata.kind, redirectStatus)
     return NextResponse.redirect(new URL(path, req.url), { status: 303 })
   }
 

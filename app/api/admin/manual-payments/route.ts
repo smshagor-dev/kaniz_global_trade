@@ -139,7 +139,7 @@ export async function PATCH(req: NextRequest) {
         status: 'PAID',
         dueDate: now,
         paidAt: now,
-        notes: data.reviewNotes || `Manual payment approved by admin.`,
+        notes: data.reviewNotes || `Manual payment approved by Kaniz Global Trade.`,
       },
     })
 

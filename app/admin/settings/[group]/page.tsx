@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { del, get, post, put } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
-import { Loader2 } from 'lucide-react'
+import { CheckCircle2, Copy, Loader2, ShieldAlert } from 'lucide-react'
 
 interface SettingItem {
   key: string
@@ -80,6 +80,13 @@ interface ServicePartnerRecord {
   updatedAt: string
 }
 
+interface FfmpegVerifyResponse {
+  binary: string
+  ok: boolean
+  code: number | null
+  message: string
+}
+
 const CURRENCY_PAGE_SIZE = 15
 
 interface GatewayCardConfig {
@@ -105,6 +112,7 @@ const GROUP_MAP: Record<string, string> = {
   partners: 'PARTNERS',
   email: 'EMAIL',
   storage: 'STORAGE',
+  media: 'MEDIA',
 }
 
 const PAYMENT_CARDS: GatewayCardConfig[] = [
@@ -281,6 +289,27 @@ function SettingField({
   )
 }
 
+function StatusPill({
+  tone,
+  children,
+}: {
+  tone: 'neutral' | 'success' | 'danger'
+  children: React.ReactNode
+}) {
+  const toneClass =
+    tone === 'success'
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : tone === 'danger'
+        ? 'bg-red-50 text-red-700 border-red-200'
+        : 'bg-slate-100 text-slate-600 border-slate-200'
+
+  return (
+    <div className={`rounded-xl border px-3 py-2 text-xs font-medium ${toneClass}`}>
+      {children}
+    </div>
+  )
+}
+
 export default function AdminSettingsGroupPage() {
   const params = useParams<{ group: string }>()
   const groupSlug = params.group
@@ -319,6 +348,8 @@ export default function AdminSettingsGroupPage() {
   const [translatingLanguageId, setTranslatingLanguageId] = useState<string | null>(null)
   const [savingPartner, setSavingPartner] = useState(false)
   const [deletingPartnerId, setDeletingPartnerId] = useState<string | null>(null)
+  const [verifyingFfmpeg, setVerifyingFfmpeg] = useState(false)
+  const [ffmpegStatus, setFfmpegStatus] = useState<FfmpegVerifyResponse | null>(null)
   const [languageForm, setLanguageForm] = useState({
     code: '',
     name: '',
@@ -505,6 +536,42 @@ export default function AdminSettingsGroupPage() {
     }
   }
 
+  async function verifyFfmpegPath() {
+    setVerifyingFfmpeg(true)
+    try {
+      const response = await post<FfmpegVerifyResponse>('/admin/settings/media/verify', {
+        path: mergedValues.FFMPEG_PATH || '',
+      })
+      setFfmpegStatus((response.data as FfmpegVerifyResponse) || null)
+      toast.success(response.message || 'FFmpeg verify completed')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'FFmpeg verification failed'
+      setFfmpegStatus({
+        binary: mergedValues.FFMPEG_PATH || '',
+        ok: false,
+        code: null,
+        message,
+      })
+      toast.error(message)
+    } finally {
+      setVerifyingFfmpeg(false)
+    }
+  }
+
+  async function copyText(value: string, label: string) {
+    if (!value) {
+      toast.error(`No ${label.toLowerCase()} available`)
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(`${label} copied`)
+    } catch {
+      toast.error(`Unable to copy ${label.toLowerCase()}`)
+    }
+  }
+
   const paymentCards = useMemo(() => {
     if (group !== 'PAYMENT') return []
 
@@ -536,6 +603,7 @@ export default function AdminSettingsGroupPage() {
   const isCurrencyGroup = group === 'CURRENCY'
   const isLanguageGroup = group === 'LANGUAGE'
   const isPartnersGroup = group === 'PARTNERS'
+  const isMediaGroup = group === 'MEDIA'
   const allCurrencies = currencySnapshotData?.currencies || []
   const totalCurrencyPages = Math.max(1, Math.ceil(allCurrencies.length / CURRENCY_PAGE_SIZE))
   const normalizedCurrencyPage = Math.min(currencyPage, totalCurrencyPages)
@@ -553,7 +621,7 @@ export default function AdminSettingsGroupPage() {
             {group === 'AI'
               ? 'Store the Google Gemini key here, enable AI search by default, and control both text query understanding and image search from one place.'
               : group === 'HOME'
-              ? 'Control homepage section visibility, item limits, and the final CTA copy from admin settings.'
+              ? 'Control homepage section visibility, item limits, and the final CTA copy from Kaniz Global Trade settings.'
               : group === 'PAYMENT'
               ? 'Keep each gateway isolated in its own card with quick enable, live/sandbox, and credential controls.'
               : group === 'CURRENCY'
@@ -562,6 +630,8 @@ export default function AdminSettingsGroupPage() {
                   ? 'Add languages, store every translation key in the database, and run one-click Google translation per language.'
                   : group === 'PARTNERS'
                     ? 'Manage financing and insurance partners, including API keys and secrets, directly from the database.'
+                    : group === 'MEDIA'
+                      ? 'Save the FFmpeg binary path in the database, verify it from Kaniz Global Trade, and control server-side video thumbnail generation.'
                     : group === 'ADVERTISING'
                       ? 'Control campaign availability, placement access, approval workflow, and supplier-facing defaults for advertising.'
                 : 'Manage database-backed runtime settings for this integration group.'}
@@ -576,6 +646,16 @@ export default function AdminSettingsGroupPage() {
             >
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {syncing ? 'Syncing...' : 'Sync Rates Now'}
+            </button>
+          ) : null}
+          {group === 'MEDIA' ? (
+            <button
+              onClick={() => void verifyFfmpegPath()}
+              disabled={verifyingFfmpeg || saving}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {verifyingFfmpeg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {verifyingFfmpeg ? 'Verifying...' : 'Verify FFmpeg Path'}
             </button>
           ) : null}
           {!isLanguageGroup && !isPartnersGroup ? (
@@ -996,6 +1076,81 @@ export default function AdminSettingsGroupPage() {
 
             {!allCurrencies.length && (
               <div className="px-4 py-6 text-sm text-gray-500">No currency rows found in the database.</div>
+            )}
+          </section>
+        </div>
+      ) : isMediaGroup ? (
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">FFmpeg Verification</h2>
+                <p className="text-sm text-gray-500">Use the saved database path or type a new one below, then verify the binary directly from Kaniz Global Trade.</p>
+              </div>
+              <StatusPill tone={!ffmpegStatus ? 'neutral' : ffmpegStatus.ok ? 'success' : 'danger'}>
+                {ffmpegStatus ? (ffmpegStatus.ok ? 'Verified' : 'Last verify failed') : 'Not verified yet'}
+              </StatusPill>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-gray-400">Configured path</p>
+                    <p className="mt-2 break-all text-sm text-gray-700">{mergedValues.FFMPEG_PATH || 'ffmpeg'}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void copyText(mergedValues.FFMPEG_PATH || 'ffmpeg', 'FFmpeg path')}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition hover:border-gray-300 hover:text-gray-900"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <p className="text-xs uppercase tracking-wide text-gray-400">Thumbnail generation</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <StatusPill tone={mergedValues.VIDEO_THUMBNAILS_ENABLED === 'false' ? 'danger' : 'success'}>
+                    {mergedValues.VIDEO_THUMBNAILS_ENABLED === 'false' ? 'Disabled' : 'Enabled'}
+                  </StatusPill>
+                  <span className="text-xs text-gray-500">Controls product video thumbnail generation during upload.</span>
+                </div>
+              </div>
+            </div>
+
+            {ffmpegStatus ? (
+              <div className={`mt-4 rounded-xl border p-4 text-sm ${ffmpegStatus.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-red-200 bg-red-50 text-red-900'}`}>
+                <div className="flex items-start gap-3">
+                  {ffmpegStatus.ok ? <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0" /> : <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0" />}
+                  <div className="min-w-0">
+                    <p className="font-semibold">{ffmpegStatus.ok ? 'FFmpeg is ready' : 'FFmpeg verification failed'}</p>
+                    <p className="mt-1 break-all">{ffmpegStatus.binary}</p>
+                    <p className="mt-1">{ffmpegStatus.message}</p>
+                    <p className="mt-2 text-xs opacity-80">Exit code: {ffmpegStatus.code ?? 'n/a'}</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="space-y-4">
+            {settings.map((item) => (
+              <SettingField
+                key={item.key}
+                item={item}
+                value={mergedValues[item.key] ?? ''}
+                onChange={(value) => setValue(item.key, value)}
+                onReset={() => resetSetting(item.key)}
+                resetting={resettingKey === item.key}
+              />
+            ))}
+
+            {!isLoading && settings.length === 0 && (
+              <div className="rounded-xl border border-gray-100 bg-white p-6 text-sm text-gray-500">
+                No settings found for this group.
+              </div>
             )}
           </section>
         </div>

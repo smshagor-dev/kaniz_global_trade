@@ -1,9 +1,9 @@
 import { Server as SocketServer } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-adapter'
 import { Redis } from 'ioredis'
-import { verifyAccessToken } from '@/lib/auth/jwt'
-import prisma from '@/lib/db/prisma'
-import { setUserOnline, setUserOffline } from '@/lib/db/redis'
+import { verifyAccessToken } from '../../lib/auth/jwt'
+import prisma from '../../lib/db/prisma'
+import { setUserOnline, setUserOffline } from '../../lib/db/redis'
 
 interface SocketUser {
   userId: string
@@ -18,10 +18,29 @@ declare module 'socket.io' {
 }
 
 export function initSocketServer(io: SocketServer): void {
-  // Redis adapter for scaling
-  const pubClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
+  // Redis adapter for scaling, with graceful fallback to the in-memory adapter.
+  const pubClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+  })
   const subClient = pubClient.duplicate()
-  io.adapter(createAdapter(pubClient, subClient))
+
+  const handleRedisError = (error: Error) => {
+    console.warn(`Socket Redis adapter unavailable: ${error.message}`)
+  }
+
+  pubClient.on('error', handleRedisError)
+  subClient.on('error', handleRedisError)
+
+  Promise.all([pubClient.connect(), subClient.connect()])
+    .then(() => {
+      io.adapter(createAdapter(pubClient, subClient))
+      console.log('Socket Redis adapter connected')
+    })
+    .catch((error) => {
+      console.warn(`Socket Redis adapter disabled, using local adapter: ${error.message}`)
+    })
 
   // Auth middleware
   io.use(async (socket, next) => {
@@ -89,6 +108,8 @@ export function initSocketServer(io: SocketServer): void {
           where: { roomId_userId: { roomId, userId: user.userId } },
         })
         if (!participant || participant.isBlocked) return
+
+        socket.join(`room:${roomId}`)
 
         const message = await prisma.message.create({
           data: {

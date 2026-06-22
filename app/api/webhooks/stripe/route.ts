@@ -3,6 +3,7 @@ import { constructWebhookEvent } from '@/lib/payment/stripe'
 import prisma from '@/lib/db/prisma'
 import { createNotification } from '@/server/services/notification'
 import { sendInvoicePaidEmail } from '@/lib/email'
+import { finalizeAdCampaignPayment } from '@/lib/advertising/payment'
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -28,6 +29,22 @@ export async function POST(req: NextRequest) {
           currency?: string
         }
         const metadata = session.metadata || {}
+
+        if (metadata.kind === 'AD_CAMPAIGN' && metadata.adCampaignId) {
+          const payment = await prisma.payment.findFirst({
+            where: { stripePaymentId: session.id },
+            select: { id: true },
+          })
+
+          if (payment) {
+            await finalizeAdCampaignPayment(payment.id, {
+              checkoutSessionId: session.id,
+              paymentIntentId: session.payment_intent,
+              captureStatus: 'paid',
+            }, 'STRIPE')
+          }
+          break
+        }
 
         if (metadata.kind === 'TRADE_ORDER' && metadata.tradeOrderId && metadata.buyerId && metadata.supplierCompanyId) {
           const order = await prisma.tradeOrder.findUnique({

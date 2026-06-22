@@ -31,9 +31,21 @@ export async function getProviderConfig(provider: string) {
 
 export async function listAvailableLogisticsProviders() {
   const names = Object.keys(logisticsProviders)
-  const configs = await Promise.all(names.map((name) => getProviderConfig(name)))
-  return names.map((name, index) => ({
+  const [configs, settings] = await Promise.all([
+    Promise.all(names.map((name) => getProviderConfig(name))),
+    getSettingsMap(['ACTIVE_SHIPPING_CARRIERS']),
+  ])
+  const activeNames = new Set(
+    (settings.ACTIVE_SHIPPING_CARRIERS || '')
+      .split(',')
+      .map((item) => item.trim().toUpperCase())
+      .filter(Boolean)
+  )
+
+  return names
+    .filter((name) => activeNames.size === 0 || activeNames.has(name))
+    .map((name) => ({
     name,
-    hasCredentials: configs[index]?.hasCredentials || false,
+    hasCredentials: configs[names.indexOf(name)]?.hasCredentials || false,
   }))
 }

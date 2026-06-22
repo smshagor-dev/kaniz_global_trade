@@ -3,6 +3,7 @@ import prisma from '@/lib/db/prisma'
 import { createNotification } from '@/server/services/notification'
 import { sendInvoicePaidEmail } from '@/lib/email'
 import { NOWPaymentsIpnPayload, verifyNOWPaymentsIpnSignature } from '@/lib/payment/nowpayments'
+import { failAdCampaignPayment, finalizeAdCampaignPayment } from '@/lib/advertising/payment'
 
 function parseMetadata(value: string | null | undefined): Record<string, string> {
   if (!value) return {}
@@ -238,7 +239,9 @@ export async function POST(req: NextRequest) {
     const metadata = parseMetadata(payment.metadata)
 
     if (status === 'finished' || status === 'confirmed' || status === 'sending') {
-      if (metadata.kind === 'TRADE_ORDER' && payment.tradeOrderId) {
+      if (metadata.kind === 'AD_CAMPAIGN') {
+        await finalizeAdCampaignPayment(payment.id, payload, 'NOWPAYMENTS')
+      } else if (metadata.kind === 'TRADE_ORDER' && payment.tradeOrderId) {
         await finalizeTradeOrder(payment.id, payment.tradeOrderId, payload)
       } else if (metadata.kind === 'SUBSCRIPTION') {
         await finalizeSubscription(payment.id, payload, metadata)
@@ -249,7 +252,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (['failed', 'refunded', 'expired'].includes(status)) {
-      await markPaymentAsFailed(payment.id, `NOWPayments status: ${status}`, payload)
+      if (metadata.kind === 'AD_CAMPAIGN') {
+        await failAdCampaignPayment(payment.id, `NOWPayments status: ${status}`, payload, 'FAILED')
+      } else {
+        await markPaymentAsFailed(payment.id, `NOWPayments status: ${status}`, payload)
+      }
       return NextResponse.json({ success: true })
     }
 

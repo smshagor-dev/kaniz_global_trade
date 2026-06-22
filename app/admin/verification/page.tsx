@@ -39,7 +39,7 @@ export default function AdminVerificationPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Verification Queue</h1>
-        <p className="text-sm text-gray-500 mt-1">Review supplier company verification submissions from admin.</p>
+        <p className="text-sm text-gray-500 mt-1">Review supplier company verification submissions from Kaniz Global Trade.</p>
       </div>
 
       <select
@@ -49,7 +49,7 @@ export default function AdminVerificationPage() {
       >
         <option value="DOCUMENT_SUBMITTED">Document Submitted</option>
         <option value="REJECTED">Rejected</option>
-        <option value="ADMIN_VERIFIED">Admin Verified</option>
+        <option value="ADMIN_VERIFIED">Kaniz Global Trade Verified</option>
       </select>
 
       {records.map((record) => (

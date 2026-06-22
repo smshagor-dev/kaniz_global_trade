@@ -3,6 +3,7 @@ import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
 import { buildTrackingUrl } from '@/lib/shipping/tracking'
+import { listAvailableLogisticsProviders } from '@/lib/shipping/providers'
 import { createNotification } from '@/server/services/notification'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 
@@ -58,6 +59,11 @@ export async function PATCH(
 
     const order = await prisma.sampleOrder.findUnique({ where: { id } })
     if (!order) throw new ApiError(404, 'Sample order not found')
+    const supplierCompany = await prisma.company.findUnique({
+      where: { id: order.supplierCompanyId },
+      include: { companyUsers: { where: { isPrimary: true }, select: { userId: true } } },
+    })
+    const supplierOwnerId = supplierCompany?.companyUsers[0]?.userId || null
 
     const supplierAction = ['CONFIRM', 'REJECT', 'SHIP'].includes(data.action)
     if (supplierAction) {
@@ -71,6 +77,9 @@ export async function PATCH(
     let updated = order
 
     if (data.action === 'CONFIRM') {
+      if (order.status !== 'PENDING_SUPPLIER_CONFIRMATION') {
+        throw new ApiError(409, 'Only paid sample orders awaiting supplier confirmation can be confirmed')
+      }
       updated = await prisma.sampleOrder.update({
         where: { id: order.id },
         data: {
@@ -80,6 +89,9 @@ export async function PATCH(
         },
       })
     } else if (data.action === 'REJECT') {
+      if (!['PENDING_SUPPLIER_CONFIRMATION', 'CONFIRMED'].includes(order.status)) {
+        throw new ApiError(409, 'This sample order cannot be rejected in its current state')
+      }
       updated = await prisma.sampleOrder.update({
         where: { id: order.id },
         data: {
@@ -88,11 +100,19 @@ export async function PATCH(
         },
       })
     } else if (data.action === 'SHIP') {
+      if (order.status !== 'CONFIRMED') {
+        throw new ApiError(409, 'Only confirmed sample orders can be shipped')
+      }
       if (!data.trackingNumber || !data.trackingCarrier) {
         throw new ApiError(422, 'Tracking number and carrier are required')
       }
       const trackingCarrier = data.trackingCarrier
       const trackingNumber = data.trackingNumber
+      const activeProviders = await listAvailableLogisticsProviders()
+      const normalizedCarrier = trackingCarrier.trim().toUpperCase()
+      if (!activeProviders.some((provider) => provider.name === normalizedCarrier)) {
+        throw new ApiError(422, 'Selected carrier is not active in Kaniz Global Trade shipping settings')
+      }
 
       updated = await prisma.$transaction(async (tx) => {
         const saved = await tx.sampleOrder.update({
@@ -109,10 +129,10 @@ export async function PATCH(
             sampleOrderId: order.id,
             buyerId: order.buyerId,
             supplierCompanyId: order.supplierCompanyId,
-            carrier: trackingCarrier.toUpperCase(),
+            carrier: normalizedCarrier,
             trackingNumber,
             awbNumber: data.awbNumber,
-            trackingUrl: (await buildTrackingUrl(trackingCarrier, trackingNumber)) || null,
+            trackingUrl: (await buildTrackingUrl(normalizedCarrier, trackingNumber)) || null,
             status: 'IN_TRANSIT',
             shippedAt: new Date(),
             lastEvent: 'Sample shipment created',
@@ -131,6 +151,9 @@ export async function PATCH(
         return saved
       })
     } else if (data.action === 'MARK_DELIVERED') {
+      if (order.status !== 'SHIPPED') {
+        throw new ApiError(409, 'Only shipped sample orders can be marked delivered')
+      }
       updated = await prisma.sampleOrder.update({
         where: { id: order.id },
         data: {
@@ -139,19 +162,25 @@ export async function PATCH(
         },
       })
     } else if (data.action === 'CANCEL') {
+      if (!['PENDING_PAYMENT', 'PENDING_SUPPLIER_CONFIRMATION', 'CONFIRMED'].includes(order.status)) {
+        throw new ApiError(409, 'This sample order can no longer be cancelled')
+      }
       updated = await prisma.sampleOrder.update({
         where: { id: order.id },
         data: { status: 'CANCELLED' },
       })
     }
 
-    await createNotification({
-      userId: supplierAction ? order.buyerId : order.supplierCompanyId === authUser.companyId ? order.buyerId : order.buyerId,
-      type: 'SAMPLE_ORDER_UPDATE',
-      title: 'Sample Order Updated',
-      message: `Sample order ${updated.title} is now ${updated.status.replace(/_/g, ' ')}.`,
-      data: { sampleOrderId: updated.id, status: updated.status },
-    })
+    const notificationRecipient = supplierAction ? order.buyerId : supplierOwnerId
+    if (notificationRecipient) {
+      await createNotification({
+        userId: notificationRecipient,
+        type: 'SAMPLE_ORDER_UPDATE',
+        title: 'Sample Order Updated',
+        message: `Sample order ${updated.title} is now ${updated.status.replace(/_/g, ' ')}.`,
+        data: { sampleOrderId: updated.id, status: updated.status },
+      })
+    }
 
     return successResponse(updated, 'Sample order updated')
   } catch (error) {

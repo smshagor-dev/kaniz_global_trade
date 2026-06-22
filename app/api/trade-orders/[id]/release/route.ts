@@ -34,6 +34,12 @@ export async function POST(
       if (order.supplierCompanyId !== authUser.companyId && !authUser.roles.includes(ROLES.SUPER_ADMIN)) {
         throw new ApiError(403, 'Supplier access required')
       }
+      if (order.escrowAccount.status !== 'HELD') {
+        throw new ApiError(409, 'Escrow release can only be requested after escrow funding is complete')
+      }
+      if (!['ESCROW_FUNDED', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(order.status)) {
+        throw new ApiError(409, 'Release request is not available for the current trade order status')
+      }
 
       const updated = await prisma.escrowAccount.update({
         where: { id: order.escrowAccount.id },
@@ -57,6 +63,12 @@ export async function POST(
 
     if (order.buyerId !== authUser.userId && !authUser.roles.includes(ROLES.SUPER_ADMIN)) {
       throw new ApiError(403, 'Buyer access required')
+    }
+    if (!['HELD', 'RELEASE_REQUESTED'].includes(order.escrowAccount.status)) {
+      throw new ApiError(409, 'Escrow is not ready to be released')
+    }
+    if (!['ESCROW_FUNDED', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(order.status)) {
+      throw new ApiError(409, 'This trade order cannot be released in its current status')
     }
 
     const updatedOrder = await prisma.$transaction(async (tx) => {

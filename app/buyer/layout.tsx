@@ -8,10 +8,11 @@ import { post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { CurrencySelector } from '@/components/currency/currency-selector'
+import { NotificationDropdown } from '@/components/notifications/notification-dropdown'
 import {
   LayoutDashboard, MessageSquare, FileText, Quote,
   Heart, Star, Bell, Settings, LogOut, Globe2,
-  ChevronRight, Search, ShoppingCart, ShieldCheck, Truck, PackageCheck, Sparkles, BadgeCheck, Shield,
+  ChevronRight, Search, ShoppingCart, ShieldCheck, Truck, PackageCheck, Sparkles, BadgeCheck, Shield, BadgeDollarSign,
 } from 'lucide-react'
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/buyer/kyc',          icon: BadgeCheck,      label: 'KYC Compliance' },
   { href: '/buyer/ai-matches',   icon: Sparkles,        label: 'AI Matches' },
   { href: '/buyer/trade-orders', icon: ShoppingCart,    label: 'Trade Assurance' },
+  { href: '/buyer/commissions',  icon: BadgeDollarSign, label: 'Commission' },
   { href: '/buyer/sample-orders',icon: PackageCheck,    label: 'Sample Orders' },
   { href: '/buyer/rfqs',         icon: FileText,        label: 'My RFQs' },
   { href: '/buyer/inquiries',    icon: MessageSquare,   label: 'Inquiries' },
@@ -28,6 +30,7 @@ const navItems = [
   { href: '/buyer/shipments',    icon: Truck,           label: 'Shipments' },
   { href: '/buyer/logistics',    icon: Truck,           label: 'Logistics' },
   { href: '/buyer/insurance',    icon: Shield,          label: 'Insurance' },
+  { href: '/buyer/inspections',  icon: ShieldCheck,     label: 'Inspections' },
   { href: '/buyer/claims',       icon: Shield,          label: 'Claims' },
   { href: '/buyer/saved',        icon: Heart,           label: 'Saved Items' },
   { href: '/buyer/reviews',      icon: Star,            label: 'My Reviews' },
@@ -111,6 +114,7 @@ export default function BuyerDashboardLayout({ children }: { children: React.Rea
           <div className="flex items-center gap-3">
             <LanguageSwitcher compact />
             <CurrencySelector compact />
+            <NotificationDropdown audience="buyer" inboxHref="/buyer/notifications" />
             <Link href="/products" className="flex items-center gap-1.5 text-sm text-blue-700 hover:underline">
               <Search className="w-4 h-4" /> Browse Products
             </Link>

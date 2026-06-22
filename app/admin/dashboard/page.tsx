@@ -78,7 +78,7 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Kaniz Global Trade Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">Platform overview and management</p>
       </div>
 
@@ -104,7 +104,7 @@ export default function AdminDashboardPage() {
         <div className="bg-red-50 border border-red-200 rounded-xl p-5">
           <h2 className="text-base font-semibold text-red-800">Dashboard data failed to load</h2>
           <p className="text-sm text-red-700 mt-1">
-            {(error as Error)?.message || 'The admin stats request returned an error.'}
+            {(error as Error)?.message || 'The Kaniz Global Trade stats request returned an error.'}
           </p>
           <button
             onClick={() => refetch()}
@@ -118,7 +118,7 @@ export default function AdminDashboardPage() {
 
       {!isLoading && !error && !stats && (
         <div className="bg-white border border-gray-100 rounded-xl p-6 text-sm text-gray-500">
-          No admin stats are available yet.
+          No Kaniz Global Trade stats are available yet.
         </div>
       )}
 

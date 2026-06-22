@@ -8,6 +8,7 @@ import { createOneTimeCheckoutSession, createStripeCustomer } from '@/lib/paymen
 import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
 import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
 import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
+import { calculateCommissionAmount, SAMPLE_COMMISSION_RATE } from '@/lib/commerce/revenue'
 
 const createSampleOrderSchema = z.object({
   productId: z.string().optional(),
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
 
     if (!supplierCompanyId) throw new ApiError(400, 'Supplier company is required')
     const totalAmount = samplePrice + data.shippingCost
+    const platformCommissionAmount = calculateCommissionAmount(samplePrice, SAMPLE_COMMISSION_RATE)
     const buyer = await prisma.user.findUnique({ where: { id: authUser.userId } })
     if (!buyer) throw new ApiError(404, 'Buyer not found')
 
@@ -105,6 +107,8 @@ export async function POST(req: NextRequest) {
         shippingAddress: data.shippingAddress,
         requirements: data.requirements,
         buyerNotes: data.buyerNotes,
+        platformCommissionRate: SAMPLE_COMMISSION_RATE,
+        platformCommissionAmount,
         status: ['STRIPE', 'SSLCOMMERZ', 'AAMARPAY', 'NOWPAYMENTS'].includes(data.paymentMethod) ? 'PENDING_PAYMENT' : 'PENDING_SUPPLIER_CONFIRMATION',
       },
     })
@@ -308,6 +312,17 @@ export async function POST(req: NextRequest) {
         status: 'PAID',
         transactionId: data.transactionId,
         metadata: JSON.stringify({ sampleOrderId: sampleOrder.id }),
+      },
+    })
+
+    await prisma.platformCommission.create({
+      data: {
+        companyId: supplierCompanyId,
+        buyerId: authUser.userId,
+        amount: platformCommissionAmount,
+        rate: SAMPLE_COMMISSION_RATE,
+        currencyCode: data.currencyCode,
+        notes: `Sample order commission for ${sampleOrder.title}`,
       },
     })
 

@@ -82,6 +82,7 @@ export const SYSTEM_SETTING_DEFINITIONS: SettingDefinition[] = [
   { key: 'UPS_CLIENT_ID', group: 'SHIPPING', label: 'UPS Client ID', type: 'STRING', description: 'UPS OAuth client ID for shipment and tracking requests.', fallback: process.env.UPS_CLIENT_ID || '' },
   { key: 'UPS_CLIENT_SECRET', group: 'SHIPPING', label: 'UPS Client Secret', type: 'PASSWORD', isSecret: true, description: 'UPS OAuth client secret used to fetch access tokens.', fallback: process.env.UPS_CLIENT_SECRET || '' },
   { key: 'MAERSK_API_KEY', group: 'SHIPPING', label: 'Maersk API Key', type: 'PASSWORD', isSecret: true, description: 'Used for ocean freight booking and container milestone integrations.', fallback: process.env.MAERSK_API_KEY || '' },
+  { key: 'ACTIVE_SHIPPING_CARRIERS', group: 'SHIPPING', label: 'Active Shipping Carriers', type: 'STRING', description: 'Comma-separated carrier codes allowed in supplier shipment dropdowns. Example: DHL,FEDEX,UPS,MAERSK', fallback: 'DHL,FEDEX,UPS,MAERSK' },
   { key: 'DEFAULT_FINANCING_PARTNER', group: 'PARTNERS', label: 'Default Financing Partner', type: 'STRING', description: 'Primary lender or fintech partner surfaced in supplier financing workflows.', fallback: process.env.DEFAULT_FINANCING_PARTNER || 'Global Trade Capital' },
   { key: 'DEFAULT_INSURANCE_PROVIDER', group: 'PARTNERS', label: 'Default Insurance Provider', type: 'STRING', description: 'Default insurance carrier displayed for cargo and trade insurance offers.', fallback: process.env.DEFAULT_INSURANCE_PROVIDER || 'Allianz Trade' },
   { key: 'GOOGLE_LOGIN_ENABLED', group: 'SOCIAL', label: 'Google Login Enabled', type: 'BOOLEAN', description: 'Enable Google OAuth login on the authentication screens.', fallback: 'false' },
@@ -103,7 +104,7 @@ export const SYSTEM_SETTING_DEFINITIONS: SettingDefinition[] = [
   { key: 'SMTP_PASS', group: 'EMAIL', label: 'SMTP Password', type: 'PASSWORD', isSecret: true, description: 'Password or app token used for SMTP authentication.', fallback: process.env.SMTP_PASS || '' },
   { key: 'SMTP_FROM', group: 'EMAIL', label: 'SMTP From', type: 'STRING', description: 'Default sender identity for outgoing emails.', fallback: process.env.SMTP_FROM || 'Kaniz Global Trade <noreply@kanizglobaltrade.com>' },
   { key: 'ADS_ENABLED', group: 'ADVERTISING', label: 'Advertising Enabled', type: 'BOOLEAN', description: 'Master switch for supplier advertising campaign creation.', fallback: 'true' },
-  { key: 'ADS_AUTO_APPROVE', group: 'ADVERTISING', label: 'Auto Approve Campaigns', type: 'BOOLEAN', description: 'When enabled, new ad campaigns become active immediately instead of waiting for admin review.', fallback: 'false' },
+  { key: 'ADS_AUTO_APPROVE', group: 'ADVERTISING', label: 'Auto Approve Campaigns', type: 'BOOLEAN', description: 'When enabled, new ad campaigns become active immediately instead of waiting for Kaniz Global Trade review.', fallback: 'false' },
   { key: 'ADS_REQUIRE_PRODUCT_LINK', group: 'ADVERTISING', label: 'Require Linked Product', type: 'BOOLEAN', description: 'Require every advertising campaign to be connected to a product.', fallback: 'false' },
   { key: 'ADS_DEFAULT_BUDGET', group: 'ADVERTISING', label: 'Default Budget', type: 'NUMBER', description: 'Default budget suggested in the advertising form.', fallback: '500' },
   { key: 'ADS_DEFAULT_BID', group: 'ADVERTISING', label: 'Default Bid', type: 'NUMBER', description: 'Default bid amount suggested in the advertising form.', fallback: '25' },
@@ -123,6 +124,8 @@ export const SYSTEM_SETTING_DEFINITIONS: SettingDefinition[] = [
   { key: 'S3_ENDPOINT', group: 'STORAGE', label: 'S3 Endpoint', type: 'STRING', description: 'Custom endpoint URL for R2 or any S3-compatible provider.', fallback: process.env.S3_ENDPOINT || '' },
   { key: 'S3_REGION', group: 'STORAGE', label: 'S3 Region', type: 'STRING', description: 'Storage region. For Cloudflare R2 this commonly stays as auto.', fallback: process.env.S3_REGION || 'auto' },
   { key: 'NEXT_PUBLIC_CDN_URL', group: 'STORAGE', label: 'CDN URL', type: 'STRING', description: 'Optional public CDN base URL for serving uploaded assets.', fallback: process.env.NEXT_PUBLIC_CDN_URL || '' },
+  { key: 'VIDEO_THUMBNAILS_ENABLED', group: 'MEDIA', label: 'Video Thumbnails Enabled', type: 'BOOLEAN', description: 'Allow the server to generate thumbnails from uploaded product videos using FFmpeg.', fallback: process.env.VIDEO_THUMBNAILS_ENABLED || 'true' },
+  { key: 'FFMPEG_PATH', group: 'MEDIA', label: 'FFmpeg Binary Path', type: 'STRING', description: 'Absolute path to ffmpeg executable used for thumbnail generation and future video processing tasks.', fallback: process.env.FFMPEG_PATH || '' },
 ]
 
 export const SETTINGS_GROUPS = [
@@ -137,6 +140,7 @@ export const SETTINGS_GROUPS = [
   { key: 'ADVERTISING', label: 'Advertising & Campaigns' },
   { key: 'EMAIL', label: 'SMTP Email' },
   { key: 'STORAGE', label: 'Cloudflare R2 / AWS S3' },
+  { key: 'MEDIA', label: 'Media & FFmpeg' },
 ] as const
 
 const definitionMap = new Map(SYSTEM_SETTING_DEFINITIONS.map((item) => [item.key, item]))
