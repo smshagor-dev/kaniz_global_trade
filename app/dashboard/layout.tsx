@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useIsAuthenticated, useIsSupplier, useCurrentUser, useAuthStore } from '@/store/auth'
 import { get, post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
@@ -13,7 +13,7 @@ import { NotificationDropdown } from '@/components/notifications/notification-dr
 import {
   LayoutDashboard, Building2, Package, MessageSquare, FileText,
   Quote, Users, CreditCard, BarChart3, Bell, Settings,
-  LogOut, Globe2, Shield, ShieldCheck, ChevronRight, ShoppingBag, Truck, PackageCheck, Clapperboard, ClipboardCheck, Megaphone, Landmark, BadgeDollarSign, FolderTree,
+  LogOut, Globe2, Shield, ShieldCheck, ChevronRight, ChevronDown, ShoppingBag, Truck, PackageCheck, Clapperboard, ClipboardCheck, Megaphone, Landmark, BadgeDollarSign, FolderTree,
 } from 'lucide-react'
 import { getSupplierDashboardSectionForPath } from '@/lib/supplier-dashboard-access'
 
@@ -39,23 +39,29 @@ const navItems = [
   { key: 'inspections', href: '/dashboard/inspections', icon: ClipboardCheck, label: 'Inspections' },
   { key: 'chat', href: '/dashboard/chat', icon: MessageSquare, label: 'Live Chat' },
   { key: 'staff', href: '/dashboard/staff', icon: Users, label: 'Staff' },
-  { key: 'subscription', href: '/dashboard/subscription', icon: Shield, label: 'Subscription' },
+  { key: 'subscription', href: '/dashboard/packages', icon: Shield, label: 'Packages' },
   { key: 'payments', href: '/dashboard/payments', icon: CreditCard, label: 'Payments' },
   { key: 'analytics', href: '/dashboard/analytics', icon: BarChart3, label: 'Analytics' },
   { key: 'notifications', href: '/dashboard/notifications', icon: Bell, label: 'Notifications' },
-  { key: 'settings', href: '/dashboard/settings', icon: Settings, label: 'Settings' },
+  { key: 'settings', href: '/dashboard/settings', icon: Settings, label: 'Settings', children: [
+    { href: '/dashboard/settings', label: 'Role Permissions' },
+  ] },
 ]
 
 export default function SupplierDashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname    = usePathname()
   const router      = useRouter()
+  const queryClient = useQueryClient()
   const isAuth      = useIsAuthenticated()
   const isSupplier  = useIsSupplier()
   const user        = useCurrentUser()
   const { clearAuth, refreshToken } = useAuthStore()
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
+    settings: pathname.startsWith('/dashboard/settings'),
+  })
   const { data: accessData, isLoading: loadingAccess } = useQuery({
     queryKey: ['supplier-dashboard-access'],
-    queryFn: () => get<{ isOwner: boolean; dashboardAccess: string[]; defaultHref: string }>('/company-staff/access'),
+    queryFn: () => get<{ isOwner: boolean; dashboardAccess: string[]; defaultHref: string; packageRequired: boolean }>('/company-staff/access'),
     enabled: isAuth && isSupplier,
     staleTime: 60 * 1000,
   })
@@ -84,6 +90,11 @@ export default function SupplierDashboardLayout({ children }: { children: React.
       return
     }
 
+    if (accessData.data.packageRequired && pathname !== '/dashboard/packages') {
+      router.replace('/dashboard/packages?required=1')
+      return
+    }
+
     if (!currentSection) {
       router.replace(accessData.data.defaultHref)
       return
@@ -96,8 +107,9 @@ export default function SupplierDashboardLayout({ children }: { children: React.
 
   async function handleLogout() {
     try { await post('/auth/logout', { refreshToken }) } catch { /* ignore */ }
+    queryClient.clear()
     clearAuth()
-    router.push('/')
+    router.replace('/auth/login')
     toast.success('Logged out')
   }
 
@@ -118,8 +130,50 @@ export default function SupplierDashboardLayout({ children }: { children: React.
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
-          {visibleNavItems.map(({ href, icon: Icon, label }) => {
+          {visibleNavItems.map(({ key, href, icon: Icon, label, children }) => {
             const isActive = pathname === href || pathname.startsWith(`${href}/`)
+            if (children?.length) {
+              const isOpen = openMenus[key] ?? isActive
+              const childActive = children.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`))
+              return (
+                <div key={key} className="mb-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenus((current) => ({ ...current, [key]: !isOpen }))}
+                    className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                      childActive
+                        ? 'bg-blue-50 text-blue-700 font-semibold'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    <span className="min-w-0 flex-1 text-left">{label}</span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isOpen ? (
+                    <div className="ml-5 mt-1 border-l border-gray-100 pl-3">
+                      {children.map((child) => {
+                        const childIsActive = pathname === child.href || pathname.startsWith(`${child.href}/`)
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                              childIsActive
+                                ? 'bg-blue-50 text-blue-700 font-semibold'
+                                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            }
+
             return (
               <Link
                 key={href}

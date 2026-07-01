@@ -6,7 +6,6 @@ import toast from 'react-hot-toast'
 import { get, post } from '@/lib/utils/api-client'
 import { useCurrentUser, useHasRole, useIsSupplier } from '@/store/auth'
 import { Loader2, Plus, ShieldCheck, Users, X } from 'lucide-react'
-import { supplierDashboardSections } from '@/lib/supplier-dashboard-access'
 
 type StaffResponse = {
   company: {
@@ -220,7 +219,6 @@ export default function DashboardStaffPage() {
                   <th className="px-5 py-4">System Role</th>
                   <th className="px-5 py-4">Assigned Role</th>
                   <th className="px-5 py-4">Title</th>
-                  <th className="px-5 py-4">Dashboard Access</th>
                   <th className="px-5 py-4">Status</th>
                   <th className="px-5 py-4">Joined</th>
                   <th className="px-5 py-4">Last Login</th>
@@ -261,18 +259,6 @@ export default function DashboardStaffPage() {
                       </td>
                       <td className="px-5 py-4 text-gray-900">{member.assignedRoleName || 'Unassigned role'}</td>
                       <td className="px-5 py-4 text-gray-900">{member.title || 'Team member'}</td>
-                      <td className="px-5 py-4">
-                        <div className="flex max-w-sm flex-wrap gap-2">
-                          {member.dashboardAccess.map((sectionKey) => {
-                            const section = supplierDashboardSections.find((item) => item.key === sectionKey)
-                            return (
-                              <span key={sectionKey} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                                {section?.label || sectionKey}
-                              </span>
-                            )
-                          })}
-                        </div>
-                      </td>
                       <td className="px-5 py-4">
                         <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
                           {formatStatus(member.user.status)}

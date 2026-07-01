@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, ApiError } from '@/lib/permissions'
+import { resolveStripeMode } from '@/lib/payment/mode'
 import { getSettingsMap } from '@/lib/settings/system'
 import { handleApiError, successResponse } from '@/lib/utils/api'
+import { hasPackageAccess } from '@/lib/packages'
 
 export async function GET(req: NextRequest) {
   try {
@@ -78,6 +80,8 @@ export async function GET(req: NextRequest) {
       }),
       getSettingsMap([
         'STRIPE_ENABLED',
+        'STRIPE_MODE',
+        'STRIPE_SECRET_KEY',
         'SSLCOMMERZ_ENABLED',
         'SSLCOMMERZ_SANDBOX_MODE',
         'AAMARPAY_ENABLED',
@@ -93,14 +97,14 @@ export async function GET(req: NextRequest) {
       company,
       subscription,
       plans,
+      packageRequired: !hasPackageAccess(subscription),
       payments,
       manualRequests,
       paymentMethods: [
-        { key: 'STRIPE', label: 'Stripe', enabled: settings.STRIPE_ENABLED === 'true', mode: 'live' },
+        { key: 'STRIPE', label: 'Stripe', enabled: settings.STRIPE_ENABLED === 'true', mode: resolveStripeMode(settings.STRIPE_MODE, settings.STRIPE_SECRET_KEY) },
         { key: 'SSLCOMMERZ', label: 'SSLCommerz', enabled: settings.SSLCOMMERZ_ENABLED === 'true', mode: settings.SSLCOMMERZ_SANDBOX_MODE === 'true' ? 'sandbox' : 'live' },
         { key: 'AAMARPAY', label: 'aamarPay', enabled: settings.AAMARPAY_ENABLED === 'true', mode: settings.AAMARPAY_SANDBOX_MODE === 'true' ? 'sandbox' : 'live' },
         { key: 'NOWPAYMENTS', label: 'NOWPayments', enabled: settings.NOWPAYMENTS_ENABLED === 'true', mode: settings.NOWPAYMENTS_SANDBOX_MODE === 'true' ? 'sandbox' : 'live' },
-        { key: 'PAYPAL', label: 'PayPal', enabled: settings.PAYPAL_ENABLED === 'true', mode: settings.PAYPAL_MODE || 'sandbox' },
         { key: 'MANUAL', label: 'Manual Bank Transfer', enabled: true, mode: 'offline' },
       ],
     })

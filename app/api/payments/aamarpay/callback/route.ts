@@ -19,7 +19,7 @@ function parseMetadata(value: string | null | undefined): Record<string, string>
 function getRedirectPath(kind: string | undefined, status: 'success' | 'failed' | 'cancelled') {
   if (kind === 'AD_CAMPAIGN') return getAdPaymentReturnUrl(status, 'aamarpay')
   if (kind === 'TRADE_ORDER') return `/buyer/trade-orders?payment=${status}&gateway=aamarpay`
-  if (kind === 'SUBSCRIPTION') return `/dashboard/subscription?payment=${status}&gateway=aamarpay`
+  if (kind === 'SUBSCRIPTION') return `/payment-return/packages?payment=${status}&gateway=aamarpay`
   return `/buyer/sample-orders?payment=${status}&gateway=aamarpay`
 }
 
@@ -239,7 +239,7 @@ async function finalizeSubscription(paymentId: string, payload: CallbackPayload,
         planName: plan.name,
         paymentMethod: 'aamarPay',
         paidAt: invoice.paidAt || now,
-        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`,
+        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/packages`,
       })
     } catch (error) {
       console.error('aamarPay invoice email failed:', error)

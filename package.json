@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "type-check": "next typegen && tsc --noEmit -p tsconfig.typecheck.json",
+    "test:service-fees": "set \"TS_NODE_PROJECT=tsconfig.test.json\" && node --require ts-node/register/transpile-only --require tsconfig-paths/register --test tests/finance/service-fees.test.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push --skip-generate",

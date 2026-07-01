@@ -6,6 +6,8 @@ import { useQuery } from '@tanstack/react-query'
 import { del, get, post, put } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import { CheckCircle2, Copy, Loader2, ShieldAlert } from 'lucide-react'
+import { ServiceFeeSettingsPanel } from '@/components/admin/service-fee-settings-panel'
+import { TaxVatSettingsPanel } from '@/components/admin/tax-vat-settings-panel'
 
 interface SettingItem {
   key: string
@@ -101,6 +103,8 @@ interface GatewayCardConfig {
 }
 
 const GROUP_MAP: Record<string, string> = {
+  'service-fees': 'SERVICE_FEES',
+  'tax-vat': 'TAX_VAT',
   ai: 'AI',
   home: 'HOME',
   payment: 'PAYMENT',
@@ -123,6 +127,8 @@ const PAYMENT_CARDS: GatewayCardConfig[] = [
     accentClass: 'from-blue-600 to-cyan-500',
     keyMatcher: (key) => key.startsWith('STRIPE_'),
     enabledKey: 'STRIPE_ENABLED',
+    modeKey: 'STRIPE_MODE',
+    modeType: 'string',
   },
   {
     id: 'sslcommerz',
@@ -313,6 +319,12 @@ function StatusPill({
 export default function AdminSettingsGroupPage() {
   const params = useParams<{ group: string }>()
   const groupSlug = params.group
+  if (groupSlug === 'service-fees') {
+    return <ServiceFeeSettingsPanel />
+  }
+  if (groupSlug === 'tax-vat') {
+    return <TaxVatSettingsPanel />
+  }
   const group = GROUP_MAP[groupSlug] || 'PAYMENT'
 
   const { data, refetch, isLoading } = useQuery({

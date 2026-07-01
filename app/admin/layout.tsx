@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useIsAuthenticated, useIsAdmin, useCurrentUser, useAuthStore } from '@/store/auth'
 import { post } from '@/lib/utils/api-client'
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown'
@@ -52,6 +53,8 @@ const navGroups = [
   {
     label: 'Trade & Revenue',
     items: [
+      { href: '/admin/packages',       icon: Package,       label: 'Supplier Packages' },
+      { href: '/admin/revenue',        icon: Shield,        label: 'Revenue' },
       { href: '/admin/trade-orders',   icon: Shield,        label: 'Trade Orders' },
       { href: '/admin/commissions',    icon: Shield,        label: 'Commissions' },
       { href: '/admin/payments',       icon: Shield,        label: 'Payments' },
@@ -71,6 +74,8 @@ const navGroups = [
         icon: Settings,
         label: 'Settings',
         children: [
+          { href: '/admin/settings/service-fees', label: 'Service Fees' },
+          { href: '/admin/settings/tax-vat', label: 'Tax & VAT' },
           { href: '/admin/settings/ai', label: 'AI Search' },
           { href: '/admin/settings/home', label: 'Home Page' },
           { href: '/admin/settings/payment', label: 'Payment' },
@@ -91,6 +96,7 @@ const navGroups = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router   = useRouter()
+  const queryClient = useQueryClient()
   const isAuth   = useIsAuthenticated()
   const isAdmin  = useIsAdmin()
   const user     = useCurrentUser()
@@ -106,8 +112,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   async function handleLogout() {
     try { await post('/auth/logout', { refreshToken }) } catch { /* ignore */ }
+    queryClient.clear()
     clearAuth()
-    router.push('/')
+    router.replace('/auth/login')
     toast.success('Logged out')
   }
 

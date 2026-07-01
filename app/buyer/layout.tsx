@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useIsAuthenticated, useIsBuyer, useIsAdmin, useCurrentUser, useAuthStore } from '@/store/auth'
 import { post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
@@ -41,6 +42,7 @@ const navItems = [
 export default function BuyerDashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname  = usePathname()
   const router    = useRouter()
+  const queryClient = useQueryClient()
   const isAuth    = useIsAuthenticated()
   const isBuyer   = useIsBuyer()
   const isAdmin   = useIsAdmin()
@@ -54,8 +56,9 @@ export default function BuyerDashboardLayout({ children }: { children: React.Rea
 
   async function handleLogout() {
     try { await post('/auth/logout', { refreshToken }) } catch { /* ignore */ }
+    queryClient.clear()
     clearAuth()
-    router.push('/')
+    router.replace('/auth/login')
     toast.success('Logged out')
   }
 

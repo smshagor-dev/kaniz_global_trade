@@ -76,8 +76,10 @@ export const useAuthStore = create<AuthState>()(
       setRememberMe: (rememberMe) =>
         set({ rememberMe }),
 
-      clearAuth: () =>
-        set({ user: null, accessToken: null, refreshToken: null }),
+      clearAuth: () => {
+        authStorage.removeItem('kgt-auth')
+        set({ user: null, accessToken: null, refreshToken: null, isLoading: false })
+      },
 
       setLoading: (isLoading) => set({ isLoading }),
     }),

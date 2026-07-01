@@ -1,12 +1,14 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { post } from '@/lib/utils/api-client'
+import { useAuthStore } from '@/store/auth'
+import { getDefaultRouteForRoles } from '@/lib/auth/redirect'
 import { Globe2, Eye, EyeOff, Building2, ShoppingBag } from 'lucide-react'
 import { LoadingButton } from '@/components/ui/loading-button'
 import toast from 'react-hot-toast'
@@ -17,9 +19,17 @@ const schema = z.object({
   email:     z.string().email('Invalid email'),
   password:  z.string().min(8).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Must contain uppercase, lowercase and number'),
   confirmPassword: z.string(),
+  companyName: z.string().optional(),
   role:      z.enum(['BUYER', 'SUPPLIER_OWNER']),
   terms:     z.boolean().refine((v) => v, 'You must accept the terms'),
-}).refine((d) => d.password === d.confirmPassword, { message: "Passwords don't match", path: ['confirmPassword'] })
+}).superRefine((d, ctx) => {
+  if (d.password !== d.confirmPassword) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Passwords don't match", path: ['confirmPassword'] })
+  }
+  if (d.role === 'SUPPLIER_OWNER' && (!d.companyName || d.companyName.trim().length < 2)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Company name is required for suppliers', path: ['companyName'] })
+  }
+})
 
 type FormData = z.infer<typeof schema>
 
@@ -27,30 +37,49 @@ function RegisterPageContent() {
   const router      = useRouter()
   const params      = useSearchParams()
   const [showPass, setShowPass] = useState(false)
+  const { user: currentUser, setAuth } = useAuthStore()
   const defaultRole = (params.get('role') as 'BUYER' | 'SUPPLIER_OWNER') || 'BUYER'
+  const selectedPackage = params.get('plan')
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { role: defaultRole, terms: false },
+    defaultValues: { role: defaultRole, terms: false, companyName: '' },
   })
 
   const role = watch('role')
 
+  useEffect(() => {
+    if (!currentUser) return
+    router.replace(getDefaultRouteForRoles(currentUser.roles))
+  }, [currentUser, router])
+
   async function onSubmit(data: FormData) {
     try {
-      await post('/auth/register', {
+      const response = await post<{
+        accessToken: string
+        refreshToken: string
+        redirectTo: string
+        user: { id: string; email: string; firstName: string; lastName: string; avatar?: string | null; roles: string[]; emailVerified?: string | null; status: string }
+      }>('/auth/register', {
         firstName: data.firstName,
         lastName:  data.lastName,
         email:     data.email,
         password:  data.password,
+        companyName: data.role === 'SUPPLIER_OWNER' ? data.companyName : undefined,
+        packageSlug: data.role === 'SUPPLIER_OWNER' ? selectedPackage || undefined : undefined,
         role:      data.role,
       })
-      toast.success('Account created! Please check your email to verify your account.')
-      router.push('/auth/login')
+      setAuth(response.data!.user, response.data!.accessToken, response.data!.refreshToken)
+      toast.success(data.role === 'SUPPLIER_OWNER' ? 'Supplier account created. Finish your package setup next.' : 'Account created! Please verify your email.')
+      router.push(response.data!.redirectTo)
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Registration failed'
       toast.error(msg)
     }
+  }
+
+  if (currentUser) {
+    return <div className="min-h-screen bg-slate-100" />
   }
 
   return (
@@ -71,6 +100,16 @@ function RegisterPageContent() {
         </div>
 
         <div className="p-8">
+          {role === 'SUPPLIER_OWNER' && selectedPackage ? (
+            <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Selected package</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{selectedPackage.replace(/-/g, ' ')}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                We will take you to package checkout right after supplier registration.
+              </p>
+            </div>
+          ) : null}
+
           {/* Role selector */}
           <div className="grid grid-cols-2 gap-3 mb-6">
             {[
@@ -95,6 +134,13 @@ function RegisterPageContent() {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            {role === 'SUPPLIER_OWNER' ? (
+              <div>
+                <input {...register('companyName')} className={inp} placeholder="Company Name" />
+                {errors.companyName && <p className="text-red-500 text-xs mt-1">{errors.companyName.message}</p>}
+              </div>
+            ) : null}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <input {...register('firstName')} className={inp} placeholder="First Name" />

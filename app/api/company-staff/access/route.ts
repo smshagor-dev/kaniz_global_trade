@@ -9,6 +9,7 @@ import {
   supplierDashboardSections,
 } from '@/lib/supplier-dashboard-access'
 import { handleApiError, successResponse } from '@/lib/utils/api'
+import { hasPackageAccess } from '@/lib/packages'
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,6 +22,12 @@ export async function GET(req: NextRequest) {
         permissions: true,
         company: {
           select: {
+            subscription: {
+              select: {
+                status: true,
+                currentPeriodEnd: true,
+              },
+            },
             companyUsers: {
               where: { isPrimary: true },
               select: {
@@ -42,11 +49,13 @@ export async function GET(req: NextRequest) {
     const dashboardAccess = isOwner
       ? getAllSupplierDashboardSectionKeys()
       : resolveSupplierDashboardAccess(companyUser.permissions, companyRoles)
+    const packageRequired = isOwner && !hasPackageAccess(companyUser.company.subscription)
 
     return successResponse({
       isOwner,
       dashboardAccess,
-      defaultHref: getSupplierDashboardDefaultHref(dashboardAccess),
+      packageRequired,
+      defaultHref: packageRequired ? '/dashboard/packages' : getSupplierDashboardDefaultHref(dashboardAccess),
       availableSections: supplierDashboardSections,
     }, 'Supplier dashboard access fetched')
   } catch (error) {

@@ -179,7 +179,7 @@ export async function PATCH(req: NextRequest) {
         planName: plan.name,
         paymentMethod: 'MANUAL',
         paidAt: invoice.paidAt || now,
-        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`,
+        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/packages`,
       })
     } catch (error) {
       console.error('Manual payment invoice email failed:', error)

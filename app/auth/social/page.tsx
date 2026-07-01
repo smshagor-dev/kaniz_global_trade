@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/auth'
+import { getDefaultRouteForRoles } from '@/lib/auth/redirect'
 
 export default function SocialAuthPage() {
   const router = useRouter()
@@ -50,17 +51,7 @@ export default function SocialAuthPage() {
       return
     }
 
-    if (user.roles.includes('SUPER_ADMIN') || user.roles.includes('ADMIN') || user.roles.includes('MODERATOR')) {
-      router.replace('/admin')
-      return
-    }
-
-    if (user.roles.includes('SUPPLIER_OWNER') || user.roles.includes('SUPPLIER_STAFF')) {
-      router.replace('/dashboard')
-      return
-    }
-
-    router.replace('/buyer')
+    router.replace(getDefaultRouteForRoles(user.roles))
   }, [params, router, setAuth])
 
   return (

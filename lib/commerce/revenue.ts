@@ -1,25 +1,39 @@
 import prisma from '@/lib/db/prisma'
-
-export const TRADE_COMMISSION_RATE = 1.5
-export const SAMPLE_COMMISSION_RATE = 0.75
-
-export function calculateCommissionAmount(baseAmount: number, rate: number) {
-  return Number(((baseAmount * rate) / 100).toFixed(2))
-}
+import { feeCalculationService } from '@/lib/finance/service-fees'
+import { RevenueLedgerStatus } from '@prisma/client'
 
 export async function settleTradeCommission(tradeOrderId: string) {
-  const commission = await prisma.platformCommission.findFirst({
-    where: { tradeOrderId },
-  })
-
-  if (!commission) return null
-  if (commission.status === 'ACCRUED' || commission.status === 'SETTLED') return commission
-
-  return prisma.platformCommission.update({
-    where: { id: commission.id },
-    data: {
-      status: 'ACCRUED',
-      recognizedAt: new Date(),
+  const order = await prisma.tradeOrder.findUnique({
+    where: { id: tradeOrderId },
+    include: {
+      payments: {
+        where: { status: 'PAID' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+      platformRevenueLedgers: {
+        where: { sourceType: 'TRADE_ORDER_TRANSACTION_FEE' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
     },
   })
+
+  if (!order) return null
+
+  if (order.platformRevenueLedgers[0]) {
+    return prisma.platformRevenueLedger.update({
+      where: { id: order.platformRevenueLedgers[0].id },
+      data: { status: RevenueLedgerStatus.POSTED },
+    })
+  }
+
+  const created = await feeCalculationService.createTradeOrderFinancials({
+    tradeOrderId: order.id,
+    buyerId: order.buyerId,
+    companyId: order.supplierCompanyId,
+    paymentId: order.payments[0]?.id ?? null,
+  })
+
+  return created.revenueLedger
 }

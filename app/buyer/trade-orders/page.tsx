@@ -11,6 +11,10 @@ import { AlertTriangle, FileText, Loader2, ShieldCheck, Wallet } from 'lucide-re
 interface TradeOrder {
   id: string
   productName: string
+  subtotal: number
+  shippingCost: number
+  escrowFee: number
+  platformCommissionAmount: number
   totalAmount: number
   currencyCode: string
   status: string
@@ -293,6 +297,18 @@ export default function BuyerTradeOrdersPage() {
                       <td className="px-6 py-4">
                         <p className="font-semibold text-[#1f2937]">
                           <CurrencyAmount amount={order.totalAmount} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-2 text-xs text-[#738076]">
+                          Base: <CurrencyAmount amount={order.subtotal} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-1 text-xs text-[#738076]">
+                          Platform fee: <CurrencyAmount amount={order.platformCommissionAmount} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-1 text-xs text-[#738076]">
+                          Escrow fee: <CurrencyAmount amount={order.escrowFee} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-1 text-xs text-[#738076]">
+                          Shipping: <CurrencyAmount amount={order.shippingCost} currencyCode={order.currencyCode} showCode />
                         </p>
                       </td>
                       <td className="px-6 py-4">

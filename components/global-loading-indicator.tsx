@@ -14,15 +14,25 @@ declare global {
   }
 }
 
-function isInteractiveAction(target: EventTarget | null) {
+function isRouteNavigation(target: EventTarget | null, event: MouseEvent) {
   if (!(target instanceof Element)) return false
 
   if (target.closest('[data-skip-loading="true"]')) return false
 
-  return Boolean(
-    target.closest(
-      'a[href], button, [role="button"], input[type="submit"], input[type="button"]'
-    )
+  const link = target.closest('a[href]') as HTMLAnchorElement | null
+  if (!link) return false
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false
+  if (link.target && link.target !== '_self') return false
+  if (link.hasAttribute('download')) return false
+
+  const nextUrl = new URL(link.href, window.location.href)
+  if (nextUrl.origin !== window.location.origin) return false
+
+  const currentUrl = new URL(window.location.href)
+  return (
+    nextUrl.pathname !== currentUrl.pathname ||
+    nextUrl.search !== currentUrl.search ||
+    nextUrl.hash !== currentUrl.hash
   )
 }
 
@@ -58,7 +68,7 @@ export function GlobalLoadingIndicator() {
     }
 
     function handleClick(event: MouseEvent) {
-      if (isInteractiveAction(event.target)) startPulse()
+      if (isRouteNavigation(event.target, event)) startPulse()
     }
 
     document.addEventListener('click', handleClick, true)

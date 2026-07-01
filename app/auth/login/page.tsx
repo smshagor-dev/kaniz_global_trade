@@ -9,15 +9,11 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { post } from '@/lib/utils/api-client'
 import { useAuthStore } from '@/store/auth'
+import { getDefaultRouteForRoles } from '@/lib/auth/redirect'
 import { Globe2, Eye, EyeOff } from 'lucide-react'
 import { LoadingButton } from '@/components/ui/loading-button'
 import toast from 'react-hot-toast'
-
-const DEMO_ACCOUNTS = [
-  { role: 'Kaniz Global Trade', email: 'admin@kanizglobaltrade.com', password: 'Admin@123456' },
-  { role: 'Supplier', email: 'supplier@kanizglobaltrade.com', password: 'Supplier@123456' },
-  { role: 'Buyer', email: 'buyer@kanizglobaltrade.com', password: 'Buyer@123456' },
-] as const
+import { DEMO_ACCOUNTS } from '@/lib/auth/demo-accounts'
 
 const schema = z.object({
   email:          z.string().email('Invalid email'),
@@ -35,7 +31,7 @@ interface SocialProvidersResponse {
 function LoginPageContent() {
   const router      = useRouter()
   const params      = useSearchParams()
-  const { setAuth, rememberMe: savedRememberMe, setRememberMe } = useAuthStore()
+  const { user: currentUser, setAuth, rememberMe: savedRememberMe, setRememberMe } = useAuthStore()
   const [showPass, setShowPass]   = useState(false)
   const [needs2FA, setNeeds2FA]   = useState(false)
 
@@ -70,6 +66,12 @@ function LoginPageContent() {
     }
   }, [params])
 
+  useEffect(() => {
+    if (!currentUser) return
+    const redirect = params.get('redirect')
+    router.replace(redirect || getDefaultRouteForRoles(currentUser.roles))
+  }, [currentUser, params, router])
+
   async function onSubmit(data: FormData) {
     try {
       setRememberMe(data.rememberMe)
@@ -91,10 +93,7 @@ function LoginPageContent() {
 
       if (redirect) { router.push(redirect); return }
 
-      const roles = user!.roles
-      if (roles.includes('SUPER_ADMIN') || roles.includes('ADMIN') || roles.includes('MODERATOR')) router.push('/admin')
-      else if (roles.includes('SUPPLIER_OWNER') || roles.includes('SUPPLIER_STAFF')) router.push('/dashboard')
-      else router.push('/buyer')
+      router.push(getDefaultRouteForRoles(user!.roles))
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Login failed'
       toast.error(msg)
@@ -106,6 +105,10 @@ function LoginPageContent() {
     setValue('password', account.password, { shouldDirty: true, shouldTouch: true, shouldValidate: true })
     setNeeds2FA(false)
     toast.success(`${account.role} demo credentials inserted`)
+  }
+
+  if (currentUser) {
+    return <div className="min-h-screen bg-slate-100" />
   }
 
   return (

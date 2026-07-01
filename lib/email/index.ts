@@ -201,7 +201,7 @@ export async function sendSubscriptionExpiryEmail(
   planName: string,
   expiresAt: Date
 ): Promise<void> {
-  const url = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`
+  const url = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/packages`
   const days = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
   await sendEmail({
     to: email,
@@ -230,7 +230,7 @@ interface InvoicePaidEmailOptions {
 }
 
 export async function sendInvoicePaidEmail(options: InvoicePaidEmailOptions): Promise<void> {
-  const dashboardUrl = options.dashboardUrl || `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`
+  const dashboardUrl = options.dashboardUrl || `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/packages`
 
   await sendEmail({
     to: options.to,

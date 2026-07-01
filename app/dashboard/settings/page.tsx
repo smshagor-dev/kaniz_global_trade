@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { get, post } from '@/lib/utils/api-client'
+import { del, get, post, put } from '@/lib/utils/api-client'
 import { useHasRole } from '@/store/auth'
-import { Loader2, Plus, Settings, ShieldCheck } from 'lucide-react'
+import { Edit, Loader2, Plus, Settings, ShieldCheck, Trash2, X } from 'lucide-react'
 
 type SettingsPayload = {
   roles: Array<{
@@ -28,7 +28,8 @@ type RoleForm = {
 export default function DashboardSettingsPage() {
   const queryClient = useQueryClient()
   const isOwner = useHasRole('SUPPLIER_OWNER')
-  const [settingsMenu, setSettingsMenu] = useState('role-permissions')
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null)
   const [roleForm, setRoleForm] = useState<RoleForm>({
     name: '',
     dashboardAccess: ['overview'],
@@ -59,6 +60,70 @@ export default function DashboardSettingsPage() {
       toast.error(message)
     },
   })
+
+  const updateRoleMutation = useMutation({
+    mutationFn: () => put('/company-staff/roles', { id: editingRoleId, ...roleForm }),
+    onSuccess: (response) => {
+      toast.success(response.message || 'Staff role updated successfully')
+      resetRoleForm()
+      queryClient.invalidateQueries({ queryKey: ['company-staff-roles'] })
+      queryClient.invalidateQueries({ queryKey: ['company-staff'] })
+      queryClient.invalidateQueries({ queryKey: ['supplier-dashboard-access'] })
+    },
+    onError: (error: unknown) => {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to update staff role'
+      toast.error(message)
+    },
+  })
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: (roleId: string) => del('/company-staff/roles', { id: roleId }),
+    onSuccess: (response) => {
+      toast.success(response.message || 'Staff role deleted successfully')
+      resetRoleForm()
+      queryClient.invalidateQueries({ queryKey: ['company-staff-roles'] })
+      queryClient.invalidateQueries({ queryKey: ['company-staff'] })
+      queryClient.invalidateQueries({ queryKey: ['supplier-dashboard-access'] })
+    },
+    onError: (error: unknown) => {
+      const message = (error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to delete staff role'
+      toast.error(message)
+    },
+    onSettled: () => {
+      setDeletingRoleId(null)
+    },
+  })
+
+  function resetRoleForm() {
+    setEditingRoleId(null)
+    setRoleForm({
+      name: '',
+      dashboardAccess: ['overview'],
+    })
+  }
+
+  function startEditRole(role: SettingsPayload['roles'][number]) {
+    setEditingRoleId(role.id)
+    setRoleForm({
+      name: role.name,
+      dashboardAccess: role.dashboardAccess,
+    })
+  }
+
+  function submitRoleForm() {
+    if (editingRoleId) {
+      updateRoleMutation.mutate()
+      return
+    }
+
+    createRoleMutation.mutate()
+  }
+
+  function deleteRole(role: SettingsPayload['roles'][number]) {
+    if (!window.confirm(`Delete "${role.name}"?`)) return
+    setDeletingRoleId(role.id)
+    deleteRoleMutation.mutate(role.id)
+  }
 
   if (isLoading) {
     return (
@@ -105,37 +170,100 @@ export default function DashboardSettingsPage() {
       </section>
 
       <section className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-        <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          <div>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-gray-700">Settings Menu</span>
-              <select value={settingsMenu} onChange={(e) => setSettingsMenu(e.target.value)} className={inputCls}>
-                <option value="role-permissions">Role Permissions</option>
-              </select>
-            </label>
-          </div>
-
-          {settingsMenu === 'role-permissions' ? (
-            <div className="space-y-6">
+        <div>
+          <div className="space-y-6">
               <div className="rounded-3xl border border-gray-100 bg-slate-50 p-5">
                 <h2 className="text-xl font-bold text-gray-900">Role Permissions</h2>
                 <p className="mt-1 text-sm text-gray-500">These roles are company-specific. Staff creation will only assign one of these roles.</p>
               </div>
 
+              <div className="overflow-hidden rounded-3xl border border-gray-100">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-100">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <th className="px-5 py-4">Role Name</th>
+                        <th className="px-5 py-4">Accessible Menus</th>
+                        {isOwner ? <th className="px-5 py-4 text-right">Actions</th> : null}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {roles.map((role) => (
+                        <tr key={role.id} className="align-top text-sm text-gray-600">
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              <ShieldCheck className="h-4 w-4 text-blue-700" />
+                              <span className="font-semibold text-gray-900">{role.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="flex max-w-2xl flex-wrap gap-2">
+                              {role.dashboardAccess.map((sectionKey) => {
+                                const section = availableSections.find((item) => item.key === sectionKey)
+                                return (
+                                  <span key={sectionKey} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                                    {section?.label || sectionKey}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          </td>
+                          {isOwner ? (
+                            <td className="px-5 py-4">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditRole(role)}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                                >
+                                  <Edit className="h-3.5 w-3.5" />
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteRole(role)}
+                                  disabled={deletingRoleId === role.id}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-100 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {deletingRoleId === role.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {!roles.length ? (
+                <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
+                  No company staff roles created yet.
+                </div>
+              ) : null}
+
               {isOwner ? (
                 <div className="rounded-3xl border border-gray-100 p-5">
                   <div className="mb-5">
-                    <h3 className="text-lg font-bold text-gray-900">Create Role</h3>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h3 className="text-lg font-bold text-gray-900">{editingRoleId ? 'Edit Role' : 'Create Role'}</h3>
+                      {editingRoleId ? (
+                        <button
+                          type="button"
+                          onClick={resetRoleForm}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Cancel Edit
+                        </button>
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-sm text-gray-500">Choose the supplier dashboard menus this role can access.</p>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Role Name">
-                      <input value={roleForm.name} onChange={(e) => setRoleForm((current) => ({ ...current, name: e.target.value }))} className={inputCls} placeholder="Sales Staff" />
-                    </Field>
-                  </div>
-
-                  <div className="mt-6">
+                  <div>
                     <p className="text-sm font-semibold text-gray-900">Dashboard Menus</p>
                     <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                       {availableSections.map((section) => {
@@ -165,15 +293,21 @@ export default function DashboardSettingsPage() {
                     </div>
                   </div>
 
+                  <div className="mt-6 grid gap-4 md:grid-cols-2">
+                    <Field label="Role Name">
+                      <input value={roleForm.name} onChange={(e) => setRoleForm((current) => ({ ...current, name: e.target.value }))} className={inputCls} placeholder="Sales Staff" />
+                    </Field>
+                  </div>
+
                   <div className="mt-6 flex justify-end">
                     <button
                       type="button"
-                      onClick={() => createRoleMutation.mutate()}
-                      disabled={createRoleMutation.isPending}
+                      onClick={submitRoleForm}
+                      disabled={createRoleMutation.isPending || updateRoleMutation.isPending}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:opacity-60"
                     >
-                      {createRoleMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      Create Role
+                      {createRoleMutation.isPending || updateRoleMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      {editingRoleId ? 'Update Role' : 'Create Role'}
                     </button>
                   </div>
                 </div>
@@ -182,51 +316,7 @@ export default function DashboardSettingsPage() {
                   Only supplier owners can create role permissions.
                 </div>
               )}
-
-              <div className="overflow-hidden rounded-3xl border border-gray-100">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-100">
-                    <thead className="bg-slate-50">
-                      <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        <th className="px-5 py-4">Role Name</th>
-                        <th className="px-5 py-4">Accessible Menus</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
-                      {roles.map((role) => (
-                        <tr key={role.id} className="align-top text-sm text-gray-600">
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              <ShieldCheck className="h-4 w-4 text-blue-700" />
-                              <span className="font-semibold text-gray-900">{role.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex max-w-2xl flex-wrap gap-2">
-                              {role.dashboardAccess.map((sectionKey) => {
-                                const section = availableSections.find((item) => item.key === sectionKey)
-                                return (
-                                  <span key={sectionKey} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                                    {section?.label || sectionKey}
-                                  </span>
-                                )
-                              })}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {!roles.length ? (
-                <div className="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-500">
-                  No company staff roles created yet.
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          </div>
         </div>
       </section>
     </div>

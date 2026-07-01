@@ -38,7 +38,7 @@ export const supplierDashboardSections: SupplierDashboardSection[] = [
   { key: 'inspections', label: 'Inspections', href: '/dashboard/inspections' },
   { key: 'chat', label: 'Live Chat', href: '/dashboard/chat' },
   { key: 'staff', label: 'Staff', href: '/dashboard/staff' },
-  { key: 'subscription', label: 'Subscription', href: '/dashboard/subscription' },
+  { key: 'subscription', label: 'Packages', href: '/dashboard/packages' },
   { key: 'payments', label: 'Payments', href: '/dashboard/payments' },
   { key: 'analytics', label: 'Analytics', href: '/dashboard/analytics' },
   { key: 'notifications', label: 'Notifications', href: '/dashboard/notifications' },

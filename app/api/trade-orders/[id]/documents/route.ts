@@ -4,6 +4,7 @@ import prisma from '@/lib/db/prisma'
 import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { buildDocumentNumber, renderTradeDocumentHtml } from '@/lib/documents/generator'
+import { FeeCalculationService } from '@/lib/finance/service-fees'
 
 function canAccess(authUser: Awaited<ReturnType<typeof requireAuth>>, order: { buyerId: string; supplierCompanyId: string }) {
   return (
@@ -46,6 +47,7 @@ export async function POST(
 ) {
   try {
     const authUser = await requireAuth(req)
+    const feeService = new FeeCalculationService()
     const { id } = await params
     const body = await req.json()
     const type = (body.type || 'PROFORMA_INVOICE') as TradeDocumentType
@@ -110,17 +112,73 @@ export async function POST(
     }
 
     const html = renderTradeDocumentHtml(payload)
-    const created = await prisma.tradeDocument.create({
-      data: {
-        tradeOrderId: order.id,
-        type,
-        documentNo,
-        title: type.replace(/_/g, ' '),
-        payload: JSON.stringify(payload),
-        html,
-        createdById: authUser.userId,
-      },
+    const feeCodeMap: Record<string, string> = {
+      COMMERCIAL_INVOICE: 'TRADE_DOCUMENT_COMMERCIAL_INVOICE',
+      PACKING_LIST: 'TRADE_DOCUMENT_PACKING_LIST',
+    }
+    const feeCode = feeCodeMap[type] || 'TRADE_DOCUMENT_EXPORT_DOCUMENT'
+    const feeResult = await feeService.calculateFee(feeCode, Number(order.subtotal))
+    const revenueLedger = await feeService.createRevenueLedger({
+      sourceType: 'TRADE_DOCUMENT_SERVICE',
+      sourceId: `${order.id}:${type}`,
+      userId: authUser.userId,
+      companyId: order.supplierCompanyId,
+      orderId: order.id,
+      tradeOrderId: order.id,
+      grossAmount: Number(order.subtotal),
+      feeAmount: feeResult.feeAmount,
+      netAmount: feeResult.feeAmount,
+      currency: order.currencyCode,
+      refundableAmount: feeResult.feeAmount,
+      nonRefundableAmount: 0,
     })
+    const snapshot = await feeService.createFeeSnapshot({
+      code: feeResult.code,
+      sourceType: 'TRADE_DOCUMENT_SERVICE',
+      sourceId: `${order.id}:${type}`,
+      userId: authUser.userId,
+      companyId: order.supplierCompanyId,
+      orderId: order.id,
+      tradeOrderId: order.id,
+      serviceFeeSettingId: feeResult.serviceFeeSettingId,
+      revenueLedgerId: revenueLedger.id,
+      baseAmount: Number(order.subtotal),
+      feeAmount: feeResult.feeAmount,
+      totalAmount: feeResult.feeAmount,
+      currency: order.currencyCode,
+      calculationData: { ...feeResult, type },
+    })
+
+    const [created] = await prisma.$transaction([
+      prisma.tradeDocument.create({
+        data: {
+          tradeOrderId: order.id,
+          type,
+          documentNo,
+          title: type.replace(/_/g, ' '),
+          payload: JSON.stringify(payload),
+          html,
+          createdById: authUser.userId,
+        },
+      }),
+      prisma.tradeDocumentRequest.create({
+        data: {
+          userId: authUser.userId,
+          companyId: order.supplierCompanyId,
+          tradeOrderId: order.id,
+          documentType: type,
+          serviceFeeSettingId: feeResult.serviceFeeSettingId,
+          revenueLedgerId: revenueLedger.id,
+          snapshotId: snapshot.id,
+          paymentStatus: 'PAID',
+          requestStatus: 'COMPLETED',
+          feeAmount: feeResult.feeAmount,
+          taxAmount: 0,
+          totalAmount: feeResult.feeAmount,
+          currency: order.currencyCode,
+        },
+      }),
+    ])
 
     return successResponse(created, 'Trade document generated', undefined, 201)
   } catch (error) {

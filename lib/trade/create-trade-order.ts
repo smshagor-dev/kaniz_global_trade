@@ -1,6 +1,6 @@
 import prisma from '@/lib/db/prisma'
 import { ApiError } from '@/lib/permissions'
-import { calculateCommissionAmount, TRADE_COMMISSION_RATE } from '@/lib/commerce/revenue'
+import { FeeCalculationService } from '@/lib/finance/service-fees'
 
 interface CreateTradeOrderInput {
   quotationId: string
@@ -10,6 +10,7 @@ interface CreateTradeOrderInput {
 }
 
 export async function createTradeOrderFromQuotation(input: CreateTradeOrderInput) {
+  const feeService = new FeeCalculationService()
   const existing = await prisma.tradeOrder.findUnique({
     where: { quotationId: input.quotationId },
     include: { escrowAccount: true, shipments: true, disputes: true },
@@ -42,8 +43,10 @@ export async function createTradeOrderFromQuotation(input: CreateTradeOrderInput
     'Trade Order'
   const subtotal = Number(quotation.totalPrice)
   const shippingCost = 0
-  const escrowFee = Number((subtotal * 0.02).toFixed(2))
-  const platformCommissionAmount = calculateCommissionAmount(subtotal, TRADE_COMMISSION_RATE)
+  const escrowFeeResult = await feeService.calculateEscrowFee(subtotal)
+  const transactionFeeResult = await feeService.calculateFee('TRANSACTION_SERVICE_FEE', subtotal)
+  const escrowFee = escrowFeeResult.feeAmount
+  const platformCommissionAmount = transactionFeeResult.feeAmount
   const totalAmount = subtotal + shippingCost + escrowFee
 
   return prisma.$transaction(async (tx) => {
@@ -59,7 +62,7 @@ export async function createTradeOrderFromQuotation(input: CreateTradeOrderInput
         subtotal,
         shippingCost,
         escrowFee,
-        platformCommissionRate: TRADE_COMMISSION_RATE,
+        platformCommissionRate: transactionFeeResult.feeValue,
         platformCommissionAmount,
         totalAmount,
         currencyCode: quotation.currencyCode,
@@ -86,8 +89,58 @@ export async function createTradeOrderFromQuotation(input: CreateTradeOrderInput
         companyId: quotation.companyId,
         buyerId: input.buyerId,
         amount: platformCommissionAmount,
-        rate: TRADE_COMMISSION_RATE,
+        rate: transactionFeeResult.feeValue,
         currencyCode: quotation.currencyCode,
+      },
+    })
+
+    const escrowSnapshot = await new FeeCalculationService(tx).createFeeSnapshot({
+      code: escrowFeeResult.code,
+      sourceType: 'TRADE_ORDER_ESCROW_FEE',
+      sourceId: order.id,
+      userId: input.buyerId,
+      companyId: quotation.companyId,
+      orderId: order.id,
+      tradeOrderId: order.id,
+      serviceFeeSettingId: escrowFeeResult.serviceFeeSettingId,
+      baseAmount: subtotal,
+      feeAmount: escrowFeeResult.feeAmount,
+      totalAmount: totalAmount,
+      currency: quotation.currencyCode,
+      calculationData: { ...escrowFeeResult },
+    })
+
+    await new FeeCalculationService(tx).createFeeSnapshot({
+      code: transactionFeeResult.code,
+      sourceType: 'TRADE_ORDER_TRANSACTION_FEE',
+      sourceId: order.id,
+      userId: input.buyerId,
+      companyId: quotation.companyId,
+      orderId: order.id,
+      tradeOrderId: order.id,
+      serviceFeeSettingId: transactionFeeResult.serviceFeeSettingId,
+      baseAmount: subtotal,
+      feeAmount: transactionFeeResult.feeAmount,
+      totalAmount: subtotal,
+      currency: quotation.currencyCode,
+      calculationData: {
+        ...transactionFeeResult,
+        supplierPayout: subtotal - transactionFeeResult.feeAmount,
+      },
+    })
+
+    await tx.escrowTransaction.create({
+      data: {
+        escrowAccountId: (await tx.escrowAccount.findUniqueOrThrow({ where: { tradeOrderId: order.id } })).id,
+        tradeOrderId: order.id,
+        type: 'FUNDING',
+        amount: totalAmount,
+        feeAmount: escrowFeeResult.feeAmount,
+        supplierPayable: subtotal - transactionFeeResult.feeAmount,
+        platformProfit: escrowFeeResult.feeAmount + transactionFeeResult.feeAmount,
+        currency: quotation.currencyCode,
+        status: 'PENDING',
+        snapshotId: escrowSnapshot.id,
       },
     })
 

@@ -13,6 +13,10 @@ interface TradeOrder {
   productName: string
   quantity: number
   unit: string
+  subtotal: number
+  shippingCost: number
+  escrowFee: number
+  platformCommissionAmount: number
   totalAmount: number
   currencyCode: string
   status: string
@@ -279,6 +283,18 @@ export default function SupplierTradeOrdersPage() {
                       <td className="px-6 py-4">
                         <p className="font-semibold text-[#1f2937]">
                           <CurrencyAmount amount={order.totalAmount} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-2 text-xs text-[#738076]">
+                          Gross order: <CurrencyAmount amount={order.subtotal} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-1 text-xs text-[#738076]">
+                          Platform deduction: <CurrencyAmount amount={order.platformCommissionAmount} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-1 text-xs text-[#738076]">
+                          Escrow deduction: <CurrencyAmount amount={order.escrowFee} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-[#1f2937]">
+                          Net receivable: <CurrencyAmount amount={Number(order.subtotal) - Number(order.platformCommissionAmount)} currencyCode={order.currencyCode} showCode />
                         </p>
                       </td>
                       <td className="px-6 py-4">

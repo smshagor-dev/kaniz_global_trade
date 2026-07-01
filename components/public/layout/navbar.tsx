@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   Bell,
@@ -89,6 +90,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
 }
 
 export function Navbar() {
+  const queryClient = useQueryClient()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -172,7 +174,13 @@ export function Navbar() {
   }, [])
 
   useEffect(() => {
-    if (!isAuth) return
+    if (!isAuth) {
+      setNotifications([])
+      setUnreadCount(0)
+      setNotificationsOpen(false)
+      setProfileOpen(false)
+      return
+    }
 
     let active = true
     setNotificationsLoading(true)
@@ -264,8 +272,13 @@ export function Navbar() {
     } catch {
       // ignore logout API failures
     }
+    setNotifications([])
+    setUnreadCount(0)
+    setNotificationsOpen(false)
+    setProfileOpen(false)
+    queryClient.clear()
     clearAuth()
-    router.push('/')
+    router.replace('/auth/login')
     toast.success('Logged out')
   }
 

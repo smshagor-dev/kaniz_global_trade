@@ -281,7 +281,7 @@ export async function POST(req: NextRequest) {
               planName: sub.plan.name,
               paymentMethod: 'Stripe',
               paidAt: dbInvoice.paidAt || now,
-              dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`,
+              dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/packages`,
             })
           } catch (error) {
             console.error('Stripe invoice email failed:', error)

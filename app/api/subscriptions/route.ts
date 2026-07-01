@@ -8,6 +8,15 @@ import { createNotification } from '@/server/services/notification'
 import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
 import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
 import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
+import { getPlanPrice, isFreePlan } from '@/lib/packages'
+
+function getPackagePaymentReturnUrl(status: 'success' | 'failed' | 'cancelled', gateway: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+  const url = new URL('/payment-return/packages', baseUrl)
+  url.searchParams.set('payment', status)
+  url.searchParams.set('gateway', gateway.toLowerCase())
+  return url.toString()
+}
 
 const subscribeSchema = z.object({
   companyId: z.string(),
@@ -51,6 +60,46 @@ export async function POST(req: NextRequest) {
     const user = await prisma.user.findUnique({ where: { id: authUser.userId } })
     if (!user) throw new ApiError(404, 'User not found')
 
+    if (isFreePlan(plan, data.billingCycle)) {
+      const now = new Date()
+      const trialEndsAt = plan.trialDays > 0
+        ? new Date(now.getTime() + plan.trialDays * 24 * 60 * 60 * 1000)
+        : null
+      const currentPeriodEnd = trialEndsAt || new Date(now.getFullYear() + 10, 11, 31)
+
+      const subscription = await prisma.subscription.upsert({
+        where: { companyId: data.companyId },
+        create: {
+          companyId: data.companyId,
+          planId: data.planId,
+          status: trialEndsAt ? 'TRIAL' : 'ACTIVE',
+          billingCycle: data.billingCycle,
+          currentPeriodStart: now,
+          currentPeriodEnd,
+          trialEndsAt,
+        },
+        update: {
+          planId: data.planId,
+          status: trialEndsAt ? 'TRIAL' : 'ACTIVE',
+          billingCycle: data.billingCycle,
+          currentPeriodStart: now,
+          currentPeriodEnd,
+          trialEndsAt,
+          cancelledAt: null,
+        },
+      })
+
+      await createNotification({
+        userId: authUser.userId,
+        type: 'PAYMENT_SUCCESS',
+        title: 'Package activated',
+        message: `${plan.name} package is now active for your supplier account.`,
+        data: { planId: plan.id, subscriptionId: subscription.id },
+      })
+
+      return successResponse({ subscription }, 'Free package activated successfully')
+    }
+
     if (data.paymentMethod === 'STRIPE') {
       let subscription = await prisma.subscription.findUnique({ where: { companyId: data.companyId } })
 
@@ -62,8 +111,8 @@ export async function POST(req: NextRequest) {
       const priceId = data.billingCycle === 'YEARLY' ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly
       if (!priceId) throw new ApiError(400, 'Stripe price not configured for this plan')
 
-      const successUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription?success=true`
-      const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`
+      const successUrl = getPackagePaymentReturnUrl('success', 'stripe')
+      const cancelUrl = getPackagePaymentReturnUrl('cancelled', 'stripe')
 
       const checkoutUrl = await createCheckoutSession(
         stripeCustomerId,
@@ -77,7 +126,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (data.paymentMethod === 'SSLCOMMERZ') {
-      const price = data.billingCycle === 'YEARLY' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice)
+      const price = getPlanPrice(plan, data.billingCycle)
       const transactionId = generateSSLCommerzTransactionId('KGTSUB')
       const payment = await prisma.payment.create({
         data: {
@@ -142,7 +191,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (data.paymentMethod === 'AAMARPAY') {
-      const price = data.billingCycle === 'YEARLY' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice)
+      const price = getPlanPrice(plan, data.billingCycle)
       const transactionId = generateAamarPayTransactionId('KGTSUB')
       await prisma.payment.create({
         data: {
@@ -190,7 +239,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (data.paymentMethod === 'NOWPAYMENTS') {
-      const price = data.billingCycle === 'YEARLY' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice)
+      const price = getPlanPrice(plan, data.billingCycle)
       const transactionId = generateNOWPaymentsOrderId('KGTSUB')
       await prisma.payment.create({
         data: {
@@ -216,8 +265,8 @@ export async function POST(req: NextRequest) {
         currency: 'USD',
         orderId: transactionId,
         description: `${plan.name} ${data.billingCycle} subscription`,
-        successUrl: `${baseUrl}/dashboard/subscription?payment=success`,
-        cancelUrl: `${baseUrl}/dashboard/subscription?payment=cancelled`,
+        successUrl: getPackagePaymentReturnUrl('success', 'nowpayments'),
+        cancelUrl: getPackagePaymentReturnUrl('cancelled', 'nowpayments'),
         ipnCallbackUrl: `${baseUrl}/api/payments/nowpayments/callback`,
       })
 

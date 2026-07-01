@@ -1,4 +1,5 @@
 import prisma from '@/lib/db/prisma'
+import { resolveStripeMode } from '@/lib/payment/mode'
 import { getAdvertisingSettings } from '@/lib/advertising/settings'
 import { getSettingsMap } from '@/lib/settings/system'
 
@@ -33,6 +34,8 @@ function parseMetadata(value: string | null | undefined): AdPaymentMetadata {
 export async function getAdPaymentMethods(): Promise<AdPaymentMethodSummary[]> {
   const settings = await getSettingsMap([
     'STRIPE_ENABLED',
+    'STRIPE_MODE',
+    'STRIPE_SECRET_KEY',
     'SSLCOMMERZ_ENABLED',
     'SSLCOMMERZ_SANDBOX_MODE',
     'AAMARPAY_ENABLED',
@@ -42,7 +45,7 @@ export async function getAdPaymentMethods(): Promise<AdPaymentMethodSummary[]> {
   ])
 
   return [
-    { key: 'STRIPE', label: 'Stripe', enabled: settings.STRIPE_ENABLED === 'true', mode: 'live' },
+    { key: 'STRIPE', label: 'Stripe', enabled: settings.STRIPE_ENABLED === 'true', mode: resolveStripeMode(settings.STRIPE_MODE, settings.STRIPE_SECRET_KEY) },
     { key: 'SSLCOMMERZ', label: 'SSLCommerz', enabled: settings.SSLCOMMERZ_ENABLED === 'true', mode: settings.SSLCOMMERZ_SANDBOX_MODE === 'true' ? 'sandbox' : 'live' },
     { key: 'AAMARPAY', label: 'aamarPay', enabled: settings.AAMARPAY_ENABLED === 'true', mode: settings.AAMARPAY_SANDBOX_MODE === 'true' ? 'sandbox' : 'live' },
     { key: 'NOWPAYMENTS', label: 'NOWPayments', enabled: settings.NOWPAYMENTS_ENABLED === 'true', mode: settings.NOWPAYMENTS_SANDBOX_MODE === 'true' ? 'sandbox' : 'live' },

@@ -8,7 +8,7 @@ import { createOneTimeCheckoutSession, createStripeCustomer } from '@/lib/paymen
 import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
 import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
 import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
-import { calculateCommissionAmount, SAMPLE_COMMISSION_RATE } from '@/lib/commerce/revenue'
+import { FeeCalculationService } from '@/lib/finance/service-fees'
 
 const createSampleOrderSchema = z.object({
   productId: z.string().optional(),
@@ -64,6 +64,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const feeService = new FeeCalculationService()
     const authUser = await requireAuth(req)
     if (!authUser.roles.includes(ROLES.BUYER) && !authUser.roles.includes(ROLES.SUPER_ADMIN)) {
       throw new ApiError(403, 'Buyer access required')
@@ -87,8 +88,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (!supplierCompanyId) throw new ApiError(400, 'Supplier company is required')
-    const totalAmount = samplePrice + data.shippingCost
-    const platformCommissionAmount = calculateCommissionAmount(samplePrice, SAMPLE_COMMISSION_RATE)
+    const sampleFeeResult = await feeService.calculateFee('SAMPLE_ORDER_SERVICE_FEE', samplePrice)
+    const totalAmount = samplePrice + data.shippingCost + sampleFeeResult.feeAmount
+    const platformCommissionAmount = sampleFeeResult.feeAmount
     const buyer = await prisma.user.findUnique({ where: { id: authUser.userId } })
     if (!buyer) throw new ApiError(404, 'Buyer not found')
 
@@ -107,9 +109,31 @@ export async function POST(req: NextRequest) {
         shippingAddress: data.shippingAddress,
         requirements: data.requirements,
         buyerNotes: data.buyerNotes,
-        platformCommissionRate: SAMPLE_COMMISSION_RATE,
+        platformCommissionRate: sampleFeeResult.feeValue,
         platformCommissionAmount,
         status: ['STRIPE', 'SSLCOMMERZ', 'AAMARPAY', 'NOWPAYMENTS'].includes(data.paymentMethod) ? 'PENDING_PAYMENT' : 'PENDING_SUPPLIER_CONFIRMATION',
+      },
+    })
+
+    await prisma.feeCalculationSnapshot.create({
+      data: {
+        code: sampleFeeResult.code,
+        sourceType: 'SAMPLE_ORDER_SERVICE_FEE',
+        sourceId: sampleOrder.id,
+        userId: authUser.userId,
+        companyId: supplierCompanyId,
+        sampleOrderId: sampleOrder.id,
+        serviceFeeSettingId: sampleFeeResult.serviceFeeSettingId,
+        baseAmount: samplePrice,
+        feeAmount: sampleFeeResult.feeAmount,
+        taxAmount: 0,
+        totalAmount,
+        currency: data.currencyCode,
+        calculationData: JSON.stringify({
+          ...sampleFeeResult,
+          shippingCost: data.shippingCost,
+          totalBuyerPayable: totalAmount,
+        }),
       },
     })
 
@@ -320,9 +344,39 @@ export async function POST(req: NextRequest) {
         companyId: supplierCompanyId,
         buyerId: authUser.userId,
         amount: platformCommissionAmount,
-        rate: SAMPLE_COMMISSION_RATE,
+        rate: sampleFeeResult.feeValue,
         currencyCode: data.currencyCode,
         notes: `Sample order commission for ${sampleOrder.title}`,
+      },
+    })
+
+    const revenueLedger = await feeService.createRevenueLedger({
+      sourceType: 'SAMPLE_ORDER_SERVICE_FEE',
+      sourceId: sampleOrder.id,
+      userId: authUser.userId,
+      companyId: supplierCompanyId,
+      sampleOrderId: sampleOrder.id,
+      grossAmount: samplePrice,
+      feeAmount: platformCommissionAmount,
+      netAmount: platformCommissionAmount,
+      currency: data.currencyCode,
+      refundableAmount: platformCommissionAmount,
+      nonRefundableAmount: 0,
+    })
+
+    await prisma.sampleOrderFee.create({
+      data: {
+        sampleOrderId: sampleOrder.id,
+        userId: authUser.userId,
+        companyId: supplierCompanyId,
+        serviceFeeSettingId: sampleFeeResult.serviceFeeSettingId,
+        revenueLedgerId: revenueLedger.id,
+        sampleProductCost: samplePrice,
+        sampleServiceFee: platformCommissionAmount,
+        shippingCost: data.shippingCost,
+        totalBuyerPayable: totalAmount,
+        platformProfit: platformCommissionAmount,
+        currency: data.currencyCode,
       },
     })
 

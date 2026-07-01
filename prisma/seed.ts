@@ -1,5 +1,11 @@
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from '@/lib/auth/password'
+import { DEMO_ACCOUNT_BY_ROLE, DEMO_ACCOUNTS } from '@/lib/auth/demo-accounts'
+import {
+  SERVICE_FEE_CATEGORY_SEEDS,
+  SERVICE_FEE_SETTING_SEEDS,
+  TAX_VAT_SETTING_SEEDS,
+} from '@/lib/finance/catalog'
 
 const prisma = new PrismaClient()
 
@@ -208,7 +214,7 @@ async function main() {
       monthlyPrice: 0, yearlyPrice: 0, trialDays: 0,
       maxProducts: 10, maxStaff: 1, maxImages: 5,
       featuredProducts: false, featuredCompany: false, verificationBadge: false,
-      analytics: false, priorityRanking: false, apiAccess: false, sortOrder: 1,
+      analytics: false, priorityRanking: false, apiAccess: false, isDefault: true, sortOrder: 1,
     },
     {
       name: 'Standard', slug: 'standard',
@@ -216,7 +222,7 @@ async function main() {
       monthlyPrice: 49.99, yearlyPrice: 499.99, trialDays: 7,
       maxProducts: 100, maxStaff: 3, maxImages: 15,
       featuredProducts: false, featuredCompany: false, verificationBadge: true,
-      analytics: true, priorityRanking: false, apiAccess: false, sortOrder: 2,
+      analytics: true, priorityRanking: false, apiAccess: false, isDefault: false, sortOrder: 2,
     },
     {
       name: 'Premium', slug: 'premium',
@@ -224,7 +230,7 @@ async function main() {
       monthlyPrice: 149.99, yearlyPrice: 1499.99, trialDays: 14,
       maxProducts: 1000, maxStaff: 10, maxImages: 30,
       featuredProducts: true, featuredCompany: true, verificationBadge: true,
-      analytics: true, priorityRanking: true, apiAccess: false, sortOrder: 3,
+      analytics: true, priorityRanking: true, apiAccess: false, isDefault: false, sortOrder: 3,
     },
     {
       name: 'Enterprise', slug: 'enterprise',
@@ -232,27 +238,143 @@ async function main() {
       monthlyPrice: 499.99, yearlyPrice: 4999.99, trialDays: 30,
       maxProducts: 999999, maxStaff: 100, maxImages: 100,
       featuredProducts: true, featuredCompany: true, verificationBadge: true,
-      analytics: true, priorityRanking: true, apiAccess: true, sortOrder: 4,
+      analytics: true, priorityRanking: true, apiAccess: true, isDefault: false, sortOrder: 4,
     },
   ]
   for (const p of plans) {
-    await prisma.subscriptionPlan.upsert({ where: { slug: p.slug }, create: p, update: {} })
+    await prisma.subscriptionPlan.upsert({ where: { slug: p.slug }, create: p, update: p })
   }
   console.log('✅ Subscription plans created')
 
+  for (const category of SERVICE_FEE_CATEGORY_SEEDS) {
+    await prisma.serviceFeeCategory.upsert({
+      where: { code: category.code },
+      create: category,
+      update: {
+        name: category.name,
+        sortOrder: category.sortOrder,
+        isActive: true,
+      },
+    })
+  }
+
+  const feeCategories = await prisma.serviceFeeCategory.findMany({ select: { id: true, code: true } })
+  const feeCategoryMap = new Map(feeCategories.map((item) => [item.code, item.id]))
+
+  for (const fee of SERVICE_FEE_SETTING_SEEDS) {
+    const categoryId = feeCategoryMap.get(fee.categoryCode)
+    if (!categoryId) continue
+    const isActive = 'isActive' in fee ? fee.isActive !== false : true
+
+    await prisma.serviceFeeSetting.upsert({
+      where: { code: fee.code },
+      create: {
+        code: fee.code,
+        name: fee.name,
+        categoryId,
+        feeType: fee.feeType,
+        feeValue: fee.feeValue,
+        currency: fee.currency,
+        appliesTo: fee.appliesTo,
+        isActive,
+        status: isActive ? 'ACTIVE' : 'INACTIVE',
+        description: fee.description,
+      },
+      update: {
+        name: fee.name,
+        categoryId,
+        feeType: fee.feeType,
+        feeValue: fee.feeValue,
+        currency: fee.currency,
+        appliesTo: fee.appliesTo,
+        isActive,
+        status: isActive ? 'ACTIVE' : 'INACTIVE',
+        description: fee.description,
+      },
+    })
+  }
+
+  for (const taxRule of TAX_VAT_SETTING_SEEDS) {
+    await prisma.taxVatSetting.upsert({
+      where: { code: taxRule.code },
+      create: taxRule,
+      update: taxRule,
+    })
+  }
+
+  const aiFee = await prisma.serviceFeeSetting.findUnique({ where: { code: 'AI_PREMIUM_PLAN' } })
+  if (aiFee) {
+    await prisma.aiPlan.upsert({
+      where: { code: 'AI_GROWTH_MONTHLY' },
+      create: {
+        serviceFeeSettingId: aiFee.id,
+        code: 'AI_GROWTH_MONTHLY',
+        name: 'AI Growth Monthly',
+        description: 'Monthly AI access for RFQ, negotiation, translation, descriptions, and market analysis.',
+        monthlyPrice: 49,
+        currency: 'USD',
+        featureLimits: JSON.stringify({
+          AI_RFQ: 100,
+          AI_NEGOTIATION: 50,
+          AI_TRANSLATION: 200,
+          AI_PRODUCT_DESCRIPTION: 100,
+          AI_MARKET_ANALYSIS: 25,
+        }),
+        usageLimits: JSON.stringify({ monthlyTokens: 500000 }),
+        features: JSON.stringify(['AI_RFQ', 'AI_NEGOTIATION', 'AI_TRANSLATION', 'AI_PRODUCT_DESCRIPTION', 'AI_MARKET_ANALYSIS']),
+      },
+      update: {
+        serviceFeeSettingId: aiFee.id,
+        monthlyPrice: 49,
+        currency: 'USD',
+      },
+    })
+  }
+
+  const rfqFee = await prisma.serviceFeeSetting.findUnique({ where: { code: 'RFQ_CREDIT_PACKAGE' } })
+  if (rfqFee) {
+    await prisma.rfqCreditPackage.upsert({
+      where: { code: 'RFQ_CREDIT_100' },
+      create: {
+        serviceFeeSettingId: rfqFee.id,
+        code: 'RFQ_CREDIT_100',
+        name: 'RFQ Credit 100',
+        credits: 100,
+        price: 30,
+        currency: 'USD',
+        expiryDays: 365,
+      },
+      update: {
+        serviceFeeSettingId: rfqFee.id,
+        credits: 100,
+        price: 30,
+        currency: 'USD',
+        expiryDays: 365,
+      },
+    })
+  }
+  console.log('✅ Dynamic fee, tax, AI, and RFQ defaults created')
+
   // ── Admin user ─────────────────────────────────────────────
-  const adminPwd = await hashPassword('Admin@123456')
+  const adminAccount = DEMO_ACCOUNT_BY_ROLE.SUPER_ADMIN
+  const adminPwd = await hashPassword(adminAccount.password)
   const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@kanizglobaltrade.com' },
+    where: { email: adminAccount.email },
     create: {
-      email: 'admin@kanizglobaltrade.com',
+      email: adminAccount.email,
       password: adminPwd,
-      firstName: 'System',
-      lastName: 'Admin',
+      firstName: adminAccount.firstName,
+      lastName: adminAccount.lastName,
       status: 'ACTIVE',
       emailVerified: new Date(),
     },
-    update: {},
+    update: {
+      password: adminPwd,
+      firstName: adminAccount.firstName,
+      lastName: adminAccount.lastName,
+      status: 'ACTIVE',
+      emailVerified: new Date(),
+    },
   })
   const saRole = await prisma.role.findUnique({ where: { name: 'SUPER_ADMIN' } })
   await prisma.userRole.upsert({
@@ -265,18 +387,25 @@ async function main() {
   })
 
   // ── Buyer user ─────────────────────────────────────────────
-  const buyerPwd = await hashPassword('Buyer@123456')
+  const buyerAccount = DEMO_ACCOUNT_BY_ROLE.BUYER
+  const buyerPwd = await hashPassword(buyerAccount.password)
   const buyerUser = await prisma.user.upsert({
-    where: { email: 'buyer@kanizglobaltrade.com' },
+    where: { email: buyerAccount.email },
     create: {
-      email: 'buyer@kanizglobaltrade.com',
+      email: buyerAccount.email,
       password: buyerPwd,
-      firstName: 'Test',
-      lastName: 'Buyer',
+      firstName: buyerAccount.firstName,
+      lastName: buyerAccount.lastName,
       status: 'ACTIVE',
       emailVerified: new Date(),
     },
-    update: {},
+    update: {
+      password: buyerPwd,
+      firstName: buyerAccount.firstName,
+      lastName: buyerAccount.lastName,
+      status: 'ACTIVE',
+      emailVerified: new Date(),
+    },
   })
   const buyerRole = await prisma.role.findUnique({ where: { name: 'BUYER' } })
   await prisma.userRole.upsert({
@@ -289,18 +418,25 @@ async function main() {
   })
 
   // ── Supplier + Kaniz Fashion company ──────────────────────
-  const supplierPwd = await hashPassword('Supplier@123456')
+  const supplierAccount = DEMO_ACCOUNT_BY_ROLE.SUPPLIER_OWNER
+  const supplierPwd = await hashPassword(supplierAccount.password)
   const supplierUser = await prisma.user.upsert({
-    where: { email: 'supplier@kanizglobaltrade.com' },
+    where: { email: supplierAccount.email },
     create: {
-      email: 'supplier@kanizglobaltrade.com',
+      email: supplierAccount.email,
       password: supplierPwd,
-      firstName: 'Kaniz',
-      lastName: 'Fashion',
+      firstName: supplierAccount.firstName,
+      lastName: supplierAccount.lastName,
       status: 'ACTIVE',
       emailVerified: new Date(),
     },
-    update: {},
+    update: {
+      password: supplierPwd,
+      firstName: supplierAccount.firstName,
+      lastName: supplierAccount.lastName,
+      status: 'ACTIVE',
+      emailVerified: new Date(),
+    },
   })
   const supplierRole = await prisma.role.findUnique({ where: { name: 'SUPPLIER_OWNER' } })
   await prisma.userRole.upsert({
@@ -461,9 +597,9 @@ async function main() {
 
   console.log('\n🎉 Database seeded successfully!')
   console.log('────────────────────────────────')
-  console.log('Admin:    admin@kanizglobaltrade.com  / Admin@123456')
-  console.log('Supplier: supplier@kanizglobaltrade.com / Supplier@123456')
-  console.log('Buyer:    buyer@kanizglobaltrade.com  / Buyer@123456')
+  for (const account of DEMO_ACCOUNTS) {
+    console.log(`${account.role}: ${account.email} / ${account.password}`)
+  }
   console.log('────────────────────────────────')
 }
 

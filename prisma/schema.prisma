@@ -201,6 +201,113 @@ enum CommissionStatus {
   WAIVED
 }
 
+enum FeeType {
+  PERCENTAGE
+  FIXED
+  FREE
+}
+
+enum RevenueType {
+  CREDIT
+  REVERSAL
+}
+
+enum RevenueLedgerStatus {
+  PENDING
+  POSTED
+  REVERSED
+  FAILED
+}
+
+enum PayoutLedgerStatus {
+  PENDING
+  PROCESSING
+  PAID
+  HELD
+  REVERSED
+  CANCELLED
+}
+
+enum ServiceRequestStatus {
+  DRAFT
+  PENDING
+  AWAITING_PAYMENT
+  PAID
+  PROCESSING
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum DisputePayer {
+  BUYER
+  SUPPLIER
+  BOTH
+  LOSING_PARTY
+  NONE
+}
+
+enum DisputeCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  MEDIATION
+  RESOLVED
+  CLOSED
+  REJECTED
+}
+
+enum DisputeResolutionResult {
+  BUYER_REFUND
+  SUPPLIER_RELEASE
+  SPLIT_SETTLEMENT
+  PENALTY_APPLIED
+  REJECTED
+  OTHER
+}
+
+enum RefundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum ChargebackStatus {
+  OPEN
+  UNDER_REVIEW
+  WON
+  LOST
+  CLOSED
+}
+
+enum TaxType {
+  VAT
+  GST
+  SALES_TAX
+  WITHHOLDING
+  OTHER
+}
+
+enum TaxScope {
+  BUYER
+  SUPPLIER
+  SERVICE_FEE
+  SUBSCRIPTION
+  ALL
+}
+
+enum TaxApplicationMode {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
+enum FeeApplicationStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
 enum AdPlacement {
   SEARCH_TOP
   HOMEPAGE_HERO
@@ -408,6 +515,30 @@ model User {
   categoriesApproved Category[]             @relation("CategoryApprovedBy")
   subcategoriesCreated SubCategory[]        @relation("SubCategoryCreatedBy")
   subcategoriesApproved SubCategory[]       @relation("SubCategoryApprovedBy")
+  platformRevenueLedgers PlatformRevenueLedger[]
+  supplierPayoutLedgers SupplierPayoutLedger[] @relation("SupplierPayoutUser")
+  verificationRequests VerificationRequest[] @relation("VerificationRequester")
+  inspectionRequests InspectionRequest[] @relation("InspectionRequester")
+  insuranceRequests InsuranceRequest[] @relation("InsuranceRequester")
+  aiSubscriptions AiSubscription[]
+  aiUsageLogs AiUsageLog[]
+  rfqCreditWallets RfqCreditWallet[]
+  rfqCreditTransactions RfqCreditTransaction[]
+  tradeDocumentRequests TradeDocumentRequest[]
+  complianceServiceRequests ComplianceServiceRequest[]
+  sampleOrderFeeRecords SampleOrderFee[]
+  feeCalculationSnapshots FeeCalculationSnapshot[]
+  taxCalculationSnapshots TaxCalculationSnapshot[]
+  disputeCasesOpened DisputeCase[] @relation("DisputeOpenedBy")
+  disputeCasesAssigned DisputeCase[] @relation("DisputeAssignedTo")
+  disputeEvidenceUploaded DisputeEvidence[] @relation("DisputeEvidenceUploadedBy")
+  disputeResolutionsAuthored DisputeResolution[] @relation("DisputeResolvedBy")
+  refundRequestsOpened RefundRequest[] @relation("RefundRequestedBy")
+  refundRequestsReviewed RefundRequest[] @relation("RefundReviewedBy")
+  chargebackCases ChargebackCase[] @relation("ChargebackOpenedBy")
+  serviceFeeAuditEntries ServiceFeeSetting[] @relation("ServiceFeeUpdatedBy")
+  taxVatAuditEntries TaxVatSetting[] @relation("TaxVatUpdatedBy")
+  revenueReversalActions RevenueReversalLedger[] @relation("RevenueReversalCreatedBy")
 
   @@index([email])
   @@index([status])
@@ -598,6 +729,24 @@ model Company {
   insurancePolicies InsurancePolicy[]
   insuranceClaims   InsuranceClaim[]
   commissions       PlatformCommission[]
+  platformRevenueLedgers PlatformRevenueLedger[]
+  verificationRequests VerificationRequest[]
+  inspectionRequests InspectionRequest[]
+  insuranceRequests InsuranceRequest[]
+  aiSubscriptions AiSubscription[]
+  rfqCreditWallets RfqCreditWallet[]
+  tradeDocumentRequests TradeDocumentRequest[]
+  complianceServiceRequests ComplianceServiceRequest[]
+  sampleOrderFeeRecords SampleOrderFee[]
+  feeCalculationSnapshots FeeCalculationSnapshot[]
+  disputeCases DisputeCase[] @relation("DisputeCompany")
+  chargebackCases ChargebackCase[]
+  supplierPayoutLedgers SupplierPayoutLedger[]
+  shippingCommissions ShippingCommission[]
+  disputeFeeCases DisputeCase[] @relation("DisputeChargedCompany")
+  refundRequests RefundRequest[]
+  serviceFeeSettings ServiceFeeSetting[] @relation("ServiceFeeCompany")
+  revenueReversalLedgers RevenueReversalLedger[]
 
   @@index([slug])
   @@index([status])
@@ -1609,6 +1758,7 @@ model SubscriptionPlan {
   apiAccess            Boolean  @default(false)
   dedicatedSupport     Boolean  @default(false)
   isActive             Boolean  @default(true)
+  isDefault            Boolean  @default(false)
   sortOrder            Int      @default(0)
   stripePriceIdMonthly String?
   stripePriceIdYearly  String?
@@ -1688,6 +1838,16 @@ model Payment {
   tradeOrder    TradeOrder?    @relation(fields: [tradeOrderId], references: [id])
   sampleOrder   SampleOrder?   @relation(fields: [sampleOrderId], references: [id])
   escrowAccount EscrowAccount?
+  platformRevenueLedgers PlatformRevenueLedger[]
+  refundRequests RefundRequest[]
+  chargebackCases ChargebackCase[]
+  feeCalculationSnapshots FeeCalculationSnapshot[]
+  taxCalculationSnapshots TaxCalculationSnapshot[]
+  revenueReversalLedgers RevenueReversalLedger[]
+  supplierPayoutLedgers SupplierPayoutLedger[]
+  escrowTransactions EscrowTransaction[]
+  verificationRequests VerificationRequest[]
+  disputeCases DisputeCase[]
 
   @@index([userId])
   @@index([status])
@@ -1728,7 +1888,7 @@ model TradeOrder {
   subtotal          Decimal          @db.Decimal(15, 2)
   shippingCost      Decimal          @default(0) @db.Decimal(15, 2)
   escrowFee         Decimal          @default(0) @db.Decimal(15, 2)
-  platformCommissionRate Decimal     @default(1.5) @db.Decimal(5, 2)
+  platformCommissionRate Decimal     @default(0) @db.Decimal(5, 2)
   platformCommissionAmount Decimal   @default(0) @db.Decimal(15, 2)
   totalAmount       Decimal          @db.Decimal(15, 2)
   currencyCode      String           @default("USD")
@@ -1758,6 +1918,13 @@ model TradeOrder {
   commission      PlatformCommission?
   logisticsBookings LogisticsBooking[]
   insurancePolicies InsurancePolicy[]
+  platformRevenueLedgers PlatformRevenueLedger[]
+  supplierPayoutLedgers SupplierPayoutLedger[]
+  escrowTransactions EscrowTransaction[]
+  shippingCommissions ShippingCommission[]
+  feeCalculationSnapshots FeeCalculationSnapshot[]
+  disputeCases DisputeCase[]
+  tradeDocumentRequests TradeDocumentRequest[]
 
   @@index([buyerId])
   @@index([supplierCompanyId])
@@ -1790,6 +1957,7 @@ model EscrowAccount {
   supplierCompany Company         @relation("SupplierEscrows", fields: [supplierCompanyId], references: [id])
   payment         Payment?        @relation(fields: [paymentId], references: [id])
   disputes        EscrowDispute[]
+  escrowTransactions EscrowTransaction[]
 
   @@index([buyerId])
   @@index([supplierCompanyId])
@@ -1806,7 +1974,7 @@ model SampleOrder {
   unit              String?
   samplePrice       Decimal           @db.Decimal(15, 2)
   shippingCost      Decimal           @default(0) @db.Decimal(15, 2)
-  platformCommissionRate Decimal      @default(0.75) @db.Decimal(5, 2)
+  platformCommissionRate Decimal      @default(0) @db.Decimal(5, 2)
   platformCommissionAmount Decimal    @default(0) @db.Decimal(15, 2)
   totalAmount       Decimal           @db.Decimal(15, 2)
   currencyCode      String            @default("USD")
@@ -1832,6 +2000,12 @@ model SampleOrder {
   fraudAlerts     FraudAlert[]
   logisticsBookings LogisticsBooking[]
   insurancePolicies InsurancePolicy[]
+  platformRevenueLedgers PlatformRevenueLedger[]
+  sampleOrderFeeRecords SampleOrderFee[]
+  feeCalculationSnapshots FeeCalculationSnapshot[]
+  disputeCases DisputeCase[]
+  shippingCommissions ShippingCommission[]
+  tradeDocumentRequests TradeDocumentRequest[]
 
   @@index([productId])
   @@index([buyerId])
@@ -2137,6 +2311,7 @@ model LogisticsBooking {
   buyer       User         @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   tradeOrder  TradeOrder?  @relation(fields: [tradeOrderId], references: [id], onDelete: SetNull)
   sampleOrder SampleOrder? @relation(fields: [sampleOrderId], references: [id], onDelete: SetNull)
+  shippingCommissions ShippingCommission[]
 
   @@index([companyId])
   @@index([buyerId])
@@ -2553,6 +2728,839 @@ model NewsletterSubscriber {
   subscribedAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
+}
+
+model ServiceFeeCategory {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?  @db.Text
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  feeSettings ServiceFeeSetting[]
+
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+model ServiceFeeSetting {
+  id          String               @id @default(uuid())
+  code        String               @unique
+  name        String
+  categoryId  String
+  feeType     FeeType              @default(FIXED)
+  feeValue    Decimal              @default(0) @db.Decimal(15, 4)
+  minFee      Decimal?             @db.Decimal(15, 2)
+  maxFee      Decimal?             @db.Decimal(15, 2)
+  currency    String               @default("USD")
+  appliesTo   String
+  isActive    Boolean              @default(true)
+  status      FeeApplicationStatus @default(ACTIVE)
+  description String?              @db.Text
+  version     Int                  @default(1)
+  updatedById String?
+  companyId   String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  category                  ServiceFeeCategory        @relation(fields: [categoryId], references: [id])
+  updatedBy                 User?                     @relation("ServiceFeeUpdatedBy", fields: [updatedById], references: [id])
+  company                   Company?                  @relation("ServiceFeeCompany", fields: [companyId], references: [id])
+  feeCalculationSnapshots   FeeCalculationSnapshot[]
+  verificationRequests      VerificationRequest[]
+  inspectionRequests        InspectionRequest[]
+  insuranceRequests         InsuranceRequest[]
+  tradeDocumentRequests     TradeDocumentRequest[]
+  complianceServiceRequests ComplianceServiceRequest[]
+  sampleOrderFees           SampleOrderFee[]
+  disputeCases              DisputeCase[]
+  aiPlans                   AiPlan[]
+  rfqCreditPackages         RfqCreditPackage[]
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([status])
+  @@index([updatedById])
+  @@index([companyId])
+}
+
+model PlatformRevenueLedger {
+  id                  String               @id @default(uuid())
+  sourceType          String
+  sourceId            String
+  userId              String?
+  companyId           String?
+  orderId             String?
+  tradeOrderId        String?
+  sampleOrderId       String?
+  paymentId           String?
+  grossAmount         Decimal              @db.Decimal(15, 2)
+  feeAmount           Decimal              @db.Decimal(15, 2)
+  netAmount           Decimal              @db.Decimal(15, 2)
+  currency            String               @default("USD")
+  status              RevenueLedgerStatus  @default(PENDING)
+  revenueType         RevenueType          @default(CREDIT)
+  refundableAmount    Decimal              @default(0) @db.Decimal(15, 2)
+  nonRefundableAmount Decimal              @default(0) @db.Decimal(15, 2)
+  taxAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  taxSettingId        String?
+  parentLedgerId      String?
+  notes               String?              @db.Text
+  createdAt           DateTime             @default(now())
+
+  user              User?                  @relation(fields: [userId], references: [id])
+  company           Company?               @relation(fields: [companyId], references: [id])
+  tradeOrder        TradeOrder?            @relation(fields: [tradeOrderId], references: [id])
+  sampleOrder       SampleOrder?           @relation(fields: [sampleOrderId], references: [id])
+  payment           Payment?               @relation(fields: [paymentId], references: [id])
+  taxSetting        TaxVatSetting?         @relation(fields: [taxSettingId], references: [id])
+  parentLedger      PlatformRevenueLedger? @relation("RevenueLedgerReversal", fields: [parentLedgerId], references: [id])
+  reversalLedgers   PlatformRevenueLedger[] @relation("RevenueLedgerReversal")
+  feeSnapshots      FeeCalculationSnapshot[]
+  taxSnapshots      TaxCalculationSnapshot[]
+  payoutLedgers     SupplierPayoutLedger[]
+  verificationRequests VerificationRequest[]
+  inspectionRequests InspectionRequest[]
+  insuranceRequests InsuranceRequest[]
+  aiSubscriptions     AiSubscription[]
+  rfqCreditTransactions RfqCreditTransaction[]
+  tradeDocumentRequests TradeDocumentRequest[]
+  complianceServiceRequests ComplianceServiceRequest[]
+  sampleOrderFees SampleOrderFee[]
+  disputeCases DisputeCase[]
+  refundRequests RefundRequest[]
+  chargebackCases ChargebackCase[]
+  revenueReversalLinks RevenueReversalLedger[] @relation("ReversalOriginalLedger")
+  revenueReversalChildren RevenueReversalLedger[] @relation("ReversalGeneratedLedger")
+
+  @@index([sourceType, sourceId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([orderId])
+  @@index([tradeOrderId])
+  @@index([sampleOrderId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([revenueType])
+  @@index([taxSettingId])
+  @@index([parentLedgerId])
+}
+
+model SupplierPayoutLedger {
+  id                String             @id @default(uuid())
+  supplierId        String
+  companyId         String
+  orderId           String?
+  tradeOrderId      String?
+  paymentId         String?
+  revenueLedgerId   String?
+  grossOrderAmount  Decimal            @db.Decimal(15, 2)
+  platformFee       Decimal            @default(0) @db.Decimal(15, 2)
+  escrowFee         Decimal            @default(0) @db.Decimal(15, 2)
+  shippingFee       Decimal            @default(0) @db.Decimal(15, 2)
+  otherDeduction    Decimal            @default(0) @db.Decimal(15, 2)
+  netPayoutAmount   Decimal            @db.Decimal(15, 2)
+  payoutStatus      PayoutLedgerStatus @default(PENDING)
+  currency          String             @default("USD")
+  notes             String?            @db.Text
+  createdAt         DateTime           @default(now())
+
+  supplier      User                  @relation("SupplierPayoutUser", fields: [supplierId], references: [id])
+  company       Company               @relation(fields: [companyId], references: [id])
+  tradeOrder    TradeOrder?           @relation(fields: [tradeOrderId], references: [id])
+  payment       Payment?              @relation(fields: [paymentId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+
+  @@index([supplierId])
+  @@index([companyId])
+  @@index([orderId])
+  @@index([tradeOrderId])
+  @@index([paymentId])
+  @@index([revenueLedgerId])
+  @@index([payoutStatus])
+}
+
+model EscrowTransaction {
+  id                String        @id @default(uuid())
+  escrowAccountId   String
+  tradeOrderId      String
+  paymentId         String?
+  type              String
+  amount            Decimal       @db.Decimal(15, 2)
+  feeAmount         Decimal       @default(0) @db.Decimal(15, 2)
+  supplierPayable   Decimal       @default(0) @db.Decimal(15, 2)
+  platformProfit    Decimal       @default(0) @db.Decimal(15, 2)
+  currency          String        @default("USD")
+  status            ServiceRequestStatus @default(PENDING)
+  snapshotId        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  escrowAccount EscrowAccount          @relation(fields: [escrowAccountId], references: [id])
+  tradeOrder    TradeOrder             @relation(fields: [tradeOrderId], references: [id])
+  payment       Payment?               @relation(fields: [paymentId], references: [id])
+  snapshot      FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([escrowAccountId])
+  @@index([tradeOrderId])
+  @@index([paymentId])
+  @@index([snapshotId])
+  @@index([status])
+}
+
+model ShippingCommission {
+  id                 String      @id @default(uuid())
+  companyId          String
+  tradeOrderId       String?
+  sampleOrderId      String?
+  logisticsBookingId String?
+  originalCost       Decimal     @db.Decimal(15, 2)
+  commissionAmount   Decimal     @db.Decimal(15, 2)
+  finalBuyerCost     Decimal     @db.Decimal(15, 2)
+  platformProfit     Decimal     @db.Decimal(15, 2)
+  currency           String      @default("USD")
+  snapshotId         String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  company          Company                 @relation(fields: [companyId], references: [id])
+  tradeOrder       TradeOrder?             @relation(fields: [tradeOrderId], references: [id])
+  sampleOrder      SampleOrder?            @relation(fields: [sampleOrderId], references: [id])
+  logisticsBooking LogisticsBooking?       @relation(fields: [logisticsBookingId], references: [id])
+  snapshot         FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([companyId])
+  @@index([tradeOrderId])
+  @@index([sampleOrderId])
+  @@index([logisticsBookingId])
+  @@index([snapshotId])
+}
+
+model VerificationRequest {
+  id                  String               @id @default(uuid())
+  requesterUserId     String
+  companyId           String
+  verificationType    String
+  serviceFeeSettingId String?
+  paymentId           String?
+  revenueLedgerId     String?
+  snapshotId          String?
+  paymentStatus       PaymentStatus        @default(PENDING)
+  verificationStatus  ServiceRequestStatus @default(DRAFT)
+  feeAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  taxAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  totalAmount         Decimal              @default(0) @db.Decimal(15, 2)
+  currency            String               @default("USD")
+  notes               String?              @db.Text
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  requester      User                   @relation("VerificationRequester", fields: [requesterUserId], references: [id])
+  company        Company                @relation(fields: [companyId], references: [id])
+  serviceFee     ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  payment        Payment?               @relation(fields: [paymentId], references: [id])
+  revenueLedger  PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  snapshot       FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([requesterUserId])
+  @@index([companyId])
+  @@index([serviceFeeSettingId])
+  @@index([paymentId])
+  @@index([revenueLedgerId])
+  @@index([snapshotId])
+  @@index([paymentStatus])
+  @@index([verificationStatus])
+}
+
+model InspectionRequest {
+  id                    String               @id @default(uuid())
+  requesterUserId       String
+  companyId             String
+  inspectionType        String
+  providerName          String?
+  inspectionCost        Decimal              @default(0) @db.Decimal(15, 2)
+  platformCommission    Decimal              @default(0) @db.Decimal(15, 2)
+  providerPayout        Decimal              @default(0) @db.Decimal(15, 2)
+  serviceFeeSettingId   String?
+  revenueLedgerId       String?
+  snapshotId            String?
+  paymentStatus         PaymentStatus        @default(PENDING)
+  requestStatus         ServiceRequestStatus @default(DRAFT)
+  currency              String               @default("USD")
+  notes                 String?              @db.Text
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  requester     User                   @relation("InspectionRequester", fields: [requesterUserId], references: [id])
+  company       Company                @relation(fields: [companyId], references: [id])
+  serviceFee    ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  snapshot      FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([requesterUserId])
+  @@index([companyId])
+  @@index([serviceFeeSettingId])
+  @@index([revenueLedgerId])
+  @@index([snapshotId])
+  @@index([paymentStatus])
+  @@index([requestStatus])
+}
+
+model InsuranceRequest {
+  id                    String               @id @default(uuid())
+  requesterUserId       String
+  companyId             String
+  insuranceType         String
+  providerName          String?
+  insuranceCost         Decimal              @default(0) @db.Decimal(15, 2)
+  platformCommission    Decimal              @default(0) @db.Decimal(15, 2)
+  providerPayout        Decimal              @default(0) @db.Decimal(15, 2)
+  serviceFeeSettingId   String?
+  revenueLedgerId       String?
+  snapshotId            String?
+  paymentStatus         PaymentStatus        @default(PENDING)
+  requestStatus         ServiceRequestStatus @default(DRAFT)
+  currency              String               @default("USD")
+  notes                 String?              @db.Text
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  requester     User                   @relation("InsuranceRequester", fields: [requesterUserId], references: [id])
+  company       Company                @relation(fields: [companyId], references: [id])
+  serviceFee    ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  snapshot      FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([requesterUserId])
+  @@index([companyId])
+  @@index([serviceFeeSettingId])
+  @@index([revenueLedgerId])
+  @@index([snapshotId])
+  @@index([paymentStatus])
+  @@index([requestStatus])
+}
+
+model AiPlan {
+  id                  String            @id @default(uuid())
+  serviceFeeSettingId String?
+  code                String            @unique
+  name                String
+  description         String?           @db.Text
+  monthlyPrice        Decimal           @default(0) @db.Decimal(15, 2)
+  currency            String            @default("USD")
+  featureLimits       String?           @db.LongText
+  usageLimits         String?           @db.LongText
+  features            String?           @db.LongText
+  isActive            Boolean           @default(true)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  serviceFee    ServiceFeeSetting? @relation(fields: [serviceFeeSettingId], references: [id])
+  subscriptions AiSubscription[]
+
+  @@index([serviceFeeSettingId])
+  @@index([isActive])
+}
+
+model AiSubscription {
+  id                String               @id @default(uuid())
+  planId            String
+  userId            String
+  companyId         String?
+  revenueLedgerId   String?
+  status            SubscriptionStatus   @default(ACTIVE)
+  renewalDate       DateTime
+  startsAt          DateTime             @default(now())
+  endsAt            DateTime?
+  cancelledAt       DateTime?
+  usageSnapshot     String?              @db.LongText
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  plan          AiPlan                 @relation(fields: [planId], references: [id])
+  user          User                   @relation(fields: [userId], references: [id])
+  company       Company?               @relation(fields: [companyId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  usageLogs     AiUsageLog[]
+
+  @@index([planId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([revenueLedgerId])
+  @@index([status])
+}
+
+model AiUsageLog {
+  id             String         @id @default(uuid())
+  subscriptionId String
+  userId         String
+  featureCode    String
+  usageCount     Int            @default(1)
+  metadata       String?        @db.LongText
+  createdAt      DateTime       @default(now())
+
+  subscription AiSubscription @relation(fields: [subscriptionId], references: [id])
+  user         User           @relation(fields: [userId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([userId])
+  @@index([featureCode])
+}
+
+model RfqCreditPackage {
+  id                  String            @id @default(uuid())
+  serviceFeeSettingId String?
+  code                String            @unique
+  name                String
+  credits             Int
+  price               Decimal           @db.Decimal(15, 2)
+  currency            String            @default("USD")
+  expiryDays          Int?
+  isActive            Boolean           @default(true)
+  description         String?           @db.Text
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  serviceFee   ServiceFeeSetting?    @relation(fields: [serviceFeeSettingId], references: [id])
+  transactions RfqCreditTransaction[]
+
+  @@index([serviceFeeSettingId])
+  @@index([isActive])
+}
+
+model RfqCreditWallet {
+  id             String    @id @default(uuid())
+  userId         String
+  companyId      String?
+  freeCredits    Int       @default(0)
+  purchasedCredits Int     @default(0)
+  usedCredits    Int       @default(0)
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User                   @relation(fields: [userId], references: [id])
+  company      Company?               @relation(fields: [companyId], references: [id])
+  transactions RfqCreditTransaction[]
+
+  @@index([userId])
+  @@index([companyId])
+}
+
+model RfqCreditTransaction {
+  id              String               @id @default(uuid())
+  walletId        String
+  userId          String
+  packageId       String?
+  revenueLedgerId String?
+  type            String
+  credits         Int
+  amount          Decimal              @default(0) @db.Decimal(15, 2)
+  balanceAfter    Int
+  expiresAt       DateTime?
+  notes           String?              @db.Text
+  createdAt       DateTime             @default(now())
+
+  wallet        RfqCreditWallet        @relation(fields: [walletId], references: [id])
+  user          User                   @relation(fields: [userId], references: [id])
+  package       RfqCreditPackage?      @relation(fields: [packageId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([packageId])
+  @@index([revenueLedgerId])
+  @@index([type])
+}
+
+model TradeDocumentRequest {
+  id                  String               @id @default(uuid())
+  userId              String
+  companyId           String?
+  tradeOrderId        String?
+  sampleOrderId       String?
+  documentType        String
+  serviceFeeSettingId String?
+  revenueLedgerId     String?
+  snapshotId          String?
+  paymentStatus       PaymentStatus        @default(PENDING)
+  requestStatus       ServiceRequestStatus @default(DRAFT)
+  feeAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  taxAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  totalAmount         Decimal              @default(0) @db.Decimal(15, 2)
+  currency            String               @default("USD")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  user          User                   @relation(fields: [userId], references: [id])
+  company       Company?               @relation(fields: [companyId], references: [id])
+  tradeOrder    TradeOrder?            @relation(fields: [tradeOrderId], references: [id])
+  sampleOrder   SampleOrder?           @relation(fields: [sampleOrderId], references: [id])
+  serviceFee    ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  snapshot      FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([tradeOrderId])
+  @@index([sampleOrderId])
+  @@index([serviceFeeSettingId])
+  @@index([revenueLedgerId])
+  @@index([snapshotId])
+  @@index([paymentStatus])
+  @@index([requestStatus])
+}
+
+model ComplianceServiceRequest {
+  id                  String               @id @default(uuid())
+  userId              String
+  companyId           String?
+  serviceName         String
+  description         String?              @db.Text
+  serviceFeeSettingId String?
+  revenueLedgerId     String?
+  snapshotId          String?
+  paymentStatus       PaymentStatus        @default(PENDING)
+  requestStatus       ServiceRequestStatus @default(DRAFT)
+  feeAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  taxAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  totalAmount         Decimal              @default(0) @db.Decimal(15, 2)
+  currency            String               @default("USD")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  user          User                   @relation(fields: [userId], references: [id])
+  company       Company?               @relation(fields: [companyId], references: [id])
+  serviceFee    ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  snapshot      FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([serviceFeeSettingId])
+  @@index([revenueLedgerId])
+  @@index([snapshotId])
+  @@index([paymentStatus])
+  @@index([requestStatus])
+}
+
+model SampleOrderFee {
+  id                  String               @id @default(uuid())
+  sampleOrderId       String
+  userId              String
+  companyId           String
+  serviceFeeSettingId String?
+  revenueLedgerId     String?
+  snapshotId          String?
+  sampleProductCost   Decimal              @db.Decimal(15, 2)
+  sampleServiceFee    Decimal              @db.Decimal(15, 2)
+  shippingCost        Decimal              @default(0) @db.Decimal(15, 2)
+  totalBuyerPayable   Decimal              @db.Decimal(15, 2)
+  platformProfit      Decimal              @db.Decimal(15, 2)
+  currency            String               @default("USD")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  sampleOrder    SampleOrder            @relation(fields: [sampleOrderId], references: [id])
+  user           User                   @relation(fields: [userId], references: [id])
+  company        Company                @relation(fields: [companyId], references: [id])
+  serviceFee     ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  revenueLedger  PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  snapshot       FeeCalculationSnapshot? @relation(fields: [snapshotId], references: [id])
+
+  @@index([sampleOrderId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([serviceFeeSettingId])
+  @@index([revenueLedgerId])
+  @@index([snapshotId])
+}
+
+model FeeCalculationSnapshot {
+  id                  String               @id @default(uuid())
+  code                String
+  sourceType          String
+  sourceId            String
+  userId              String?
+  companyId           String?
+  orderId             String?
+  tradeOrderId        String?
+  sampleOrderId       String?
+  paymentId           String?
+  serviceFeeSettingId String?
+  revenueLedgerId     String?
+  baseAmount          Decimal              @db.Decimal(15, 2)
+  feeAmount           Decimal              @db.Decimal(15, 2)
+  taxAmount           Decimal              @default(0) @db.Decimal(15, 2)
+  totalAmount         Decimal              @db.Decimal(15, 2)
+  currency            String               @default("USD")
+  calculationData     String               @db.LongText
+  createdAt           DateTime             @default(now())
+
+  user             User?                  @relation(fields: [userId], references: [id])
+  company          Company?               @relation(fields: [companyId], references: [id])
+  tradeOrder       TradeOrder?            @relation(fields: [tradeOrderId], references: [id])
+  sampleOrder      SampleOrder?           @relation(fields: [sampleOrderId], references: [id])
+  payment          Payment?               @relation(fields: [paymentId], references: [id])
+  serviceFee       ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  revenueLedger    PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  escrowTransactions EscrowTransaction[]
+  shippingCommissions ShippingCommission[]
+  verificationRequests VerificationRequest[]
+  inspectionRequests InspectionRequest[]
+  insuranceRequests InsuranceRequest[]
+  tradeDocumentRequests TradeDocumentRequest[]
+  complianceServiceRequests ComplianceServiceRequest[]
+  sampleOrderFees SampleOrderFee[]
+
+  @@index([code])
+  @@index([sourceType, sourceId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([orderId])
+  @@index([tradeOrderId])
+  @@index([sampleOrderId])
+  @@index([paymentId])
+  @@index([serviceFeeSettingId])
+  @@index([revenueLedgerId])
+}
+
+model DisputeCase {
+  id                  String                   @id @default(uuid())
+  companyId           String?
+  chargedCompanyId    String?
+  tradeOrderId        String?
+  sampleOrderId       String?
+  paymentId           String?
+  revenueLedgerId     String?
+  serviceFeeSettingId String?
+  openedById          String
+  assignedToId        String?
+  disputeType         String
+  disputeReason       String
+  status              DisputeCaseStatus       @default(OPEN)
+  payer               DisputePayer            @default(NONE)
+  feeAmount           Decimal                 @default(0) @db.Decimal(15, 2)
+  refundAmount        Decimal                 @default(0) @db.Decimal(15, 2)
+  penaltyAmount       Decimal                 @default(0) @db.Decimal(15, 2)
+  resolutionResult    DisputeResolutionResult?
+  currency            String                  @default("USD")
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  company        Company?               @relation("DisputeCompany", fields: [companyId], references: [id])
+  chargedCompany Company?               @relation("DisputeChargedCompany", fields: [chargedCompanyId], references: [id])
+  tradeOrder     TradeOrder?            @relation(fields: [tradeOrderId], references: [id])
+  sampleOrder    SampleOrder?           @relation(fields: [sampleOrderId], references: [id])
+  payment        Payment?               @relation(fields: [paymentId], references: [id])
+  revenueLedger  PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  serviceFee     ServiceFeeSetting?     @relation(fields: [serviceFeeSettingId], references: [id])
+  openedBy       User                   @relation("DisputeOpenedBy", fields: [openedById], references: [id])
+  assignedTo     User?                  @relation("DisputeAssignedTo", fields: [assignedToId], references: [id])
+  evidence       DisputeEvidence[]
+  resolutions    DisputeResolution[]
+  refundRequests RefundRequest[]
+
+  @@index([companyId])
+  @@index([chargedCompanyId])
+  @@index([tradeOrderId])
+  @@index([sampleOrderId])
+  @@index([paymentId])
+  @@index([revenueLedgerId])
+  @@index([serviceFeeSettingId])
+  @@index([openedById])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model DisputeEvidence {
+  id            String   @id @default(uuid())
+  disputeCaseId String
+  uploadedById  String
+  title         String?
+  fileUrl       String   @db.Text
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  disputeCase DisputeCase @relation(fields: [disputeCaseId], references: [id])
+  uploadedBy  User        @relation("DisputeEvidenceUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([disputeCaseId])
+  @@index([uploadedById])
+}
+
+model DisputeResolution {
+  id            String                  @id @default(uuid())
+  disputeCaseId String
+  resolvedById  String
+  result        DisputeResolutionResult
+  summary       String?                 @db.Text
+  refundAmount  Decimal                 @default(0) @db.Decimal(15, 2)
+  penaltyAmount Decimal                 @default(0) @db.Decimal(15, 2)
+  createdAt     DateTime                @default(now())
+
+  disputeCase DisputeCase @relation(fields: [disputeCaseId], references: [id])
+  resolvedBy  User        @relation("DisputeResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([disputeCaseId])
+  @@index([resolvedById])
+}
+
+model RefundRequest {
+  id                    String               @id @default(uuid())
+  paymentId             String
+  companyId             String?
+  disputeCaseId         String?
+  revenueLedgerId       String?
+  requestedById         String
+  reviewedById          String?
+  status                RefundRequestStatus  @default(PENDING)
+  originalPaidAmount    Decimal              @db.Decimal(15, 2)
+  refundableAmount      Decimal              @db.Decimal(15, 2)
+  nonRefundableFee      Decimal              @default(0) @db.Decimal(15, 2)
+  gatewayFeeLoss        Decimal              @default(0) @db.Decimal(15, 2)
+  supplierAdjustment    Decimal              @default(0) @db.Decimal(15, 2)
+  approvedAmount        Decimal              @default(0) @db.Decimal(15, 2)
+  currency              String               @default("USD")
+  reason                String?              @db.Text
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  payment       Payment                @relation(fields: [paymentId], references: [id])
+  company       Company?               @relation(fields: [companyId], references: [id])
+  disputeCase   DisputeCase?           @relation(fields: [disputeCaseId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  requestedBy   User                   @relation("RefundRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy    User?                  @relation("RefundReviewedBy", fields: [reviewedById], references: [id])
+  reversalLedgers RevenueReversalLedger[]
+
+  @@index([paymentId])
+  @@index([companyId])
+  @@index([disputeCaseId])
+  @@index([revenueLedgerId])
+  @@index([requestedById])
+  @@index([reviewedById])
+  @@index([status])
+}
+
+model ChargebackCase {
+  id                    String             @id @default(uuid())
+  paymentId             String
+  companyId             String?
+  revenueLedgerId       String?
+  openedById            String
+  status                ChargebackStatus   @default(OPEN)
+  originalPaidAmount    Decimal            @db.Decimal(15, 2)
+  refundableAmount      Decimal            @default(0) @db.Decimal(15, 2)
+  nonRefundableFee      Decimal            @default(0) @db.Decimal(15, 2)
+  gatewayFeeLoss        Decimal            @default(0) @db.Decimal(15, 2)
+  supplierAdjustment    Decimal            @default(0) @db.Decimal(15, 2)
+  notes                 String?            @db.Text
+  currency              String             @default("USD")
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  payment       Payment                @relation(fields: [paymentId], references: [id])
+  company       Company?               @relation(fields: [companyId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  openedBy      User                   @relation("ChargebackOpenedBy", fields: [openedById], references: [id])
+  reversalLedgers RevenueReversalLedger[]
+
+  @@index([paymentId])
+  @@index([companyId])
+  @@index([revenueLedgerId])
+  @@index([openedById])
+  @@index([status])
+}
+
+model TaxVatSetting {
+  id                String               @id @default(uuid())
+  code              String               @unique
+  country           String
+  stateRegion       String?
+  taxName           String
+  taxRate           Decimal              @db.Decimal(8, 4)
+  taxType           TaxType
+  applicationMode   TaxApplicationMode   @default(EXCLUSIVE)
+  appliesToBuyer    Boolean              @default(true)
+  appliesToSupplier Boolean              @default(false)
+  appliesToServiceFee Boolean            @default(true)
+  appliesToSubscription Boolean          @default(true)
+  isActive          Boolean              @default(true)
+  updatedById       String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  updatedBy       User?                   @relation("TaxVatUpdatedBy", fields: [updatedById], references: [id])
+  platformRevenueLedgers PlatformRevenueLedger[]
+  taxSnapshots    TaxCalculationSnapshot[]
+
+  @@index([country])
+  @@index([stateRegion])
+  @@index([isActive])
+  @@index([updatedById])
+}
+
+model TaxCalculationSnapshot {
+  id               String               @id @default(uuid())
+  sourceType       String
+  sourceId         String
+  userId           String?
+  paymentId        String?
+  revenueLedgerId  String?
+  taxSettingId     String?
+  baseAmount       Decimal              @db.Decimal(15, 2)
+  feeAmount        Decimal              @default(0) @db.Decimal(15, 2)
+  taxAmount        Decimal              @db.Decimal(15, 2)
+  totalAmount      Decimal              @db.Decimal(15, 2)
+  currency         String               @default("USD")
+  snapshotData     String               @db.LongText
+  createdAt        DateTime             @default(now())
+
+  user          User?                  @relation(fields: [userId], references: [id])
+  payment       Payment?               @relation(fields: [paymentId], references: [id])
+  revenueLedger PlatformRevenueLedger? @relation(fields: [revenueLedgerId], references: [id])
+  taxSetting    TaxVatSetting?         @relation(fields: [taxSettingId], references: [id])
+
+  @@index([sourceType, sourceId])
+  @@index([userId])
+  @@index([paymentId])
+  @@index([revenueLedgerId])
+  @@index([taxSettingId])
+}
+
+model RevenueReversalLedger {
+  id                 String               @id @default(uuid())
+  originalLedgerId   String
+  reversalLedgerId   String?
+  paymentId          String?
+  refundRequestId    String?
+  chargebackCaseId   String?
+  companyId          String?
+  createdById        String?
+  amount             Decimal              @db.Decimal(15, 2)
+  currency           String               @default("USD")
+  reason             String?              @db.Text
+  createdAt          DateTime             @default(now())
+
+  originalLedger PlatformRevenueLedger @relation("ReversalOriginalLedger", fields: [originalLedgerId], references: [id])
+  reversalLedger PlatformRevenueLedger? @relation("ReversalGeneratedLedger", fields: [reversalLedgerId], references: [id])
+  payment       Payment?               @relation(fields: [paymentId], references: [id])
+  refundRequest RefundRequest?         @relation(fields: [refundRequestId], references: [id])
+  chargebackCase ChargebackCase?       @relation(fields: [chargebackCaseId], references: [id])
+  company       Company?               @relation(fields: [companyId], references: [id])
+  createdBy     User?                  @relation("RevenueReversalCreatedBy", fields: [createdById], references: [id])
+
+  @@index([originalLedgerId])
+  @@index([reversalLedgerId])
+  @@index([paymentId])
+  @@index([refundRequestId])
+  @@index([chargebackCaseId])
+  @@index([companyId])
+  @@index([createdById])
 }
 
 // ============================================================

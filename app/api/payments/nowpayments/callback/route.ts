@@ -204,7 +204,7 @@ async function finalizeSubscription(paymentId: string, payload: NOWPaymentsIpnPa
         planName: plan.name,
         paymentMethod: 'NOWPayments',
         paidAt: invoice.paidAt || now,
-        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/subscription`,
+        dashboardUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/packages`,
       })
     } catch (error) {
       console.error('NOWPayments invoice email failed:', error)
