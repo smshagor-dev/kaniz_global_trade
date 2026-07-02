@@ -1,8 +1,15 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  ArrowLeft,
+  ArrowRight,
+  Ban,
+  Building2,
+  CheckCircle2,
+  CircleAlert,
   Loader2,
   MailCheck,
   Pencil,
@@ -30,6 +37,18 @@ interface UserRecord {
   updatedAt: string
   roles: Array<{ role: { name: string } }>
   companyUsers: Array<{ company: { id: string; name: string } }>
+  kycProfile?: {
+    id: string
+    status: string
+    reviewedAt?: string | null
+  } | null
+  b2bCompanyOwned?: {
+    id: string
+    companyName: string
+    companyType: string
+    buyerVerificationStatus: string
+    supplierVerificationStatus: string
+  } | null
 }
 
 interface RoleOption {
@@ -65,6 +84,7 @@ const emptyForm: UserFormState = {
 
 export default function AdminUsersPage() {
   const qc = useQueryClient()
+  const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [roleFilter, setRoleFilter] = useState('ALL')
@@ -74,16 +94,18 @@ export default function AdminUsersPage() {
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null)
   const [userForm, setUserForm] = useState<UserFormState>(emptyForm)
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null)
+  const [statusTarget, setStatusTarget] = useState<UserRecord | null>(null)
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams()
-    params.set('limit', '200')
+    params.set('page', String(page))
+    params.set('limit', '15')
     if (search.trim()) params.set('q', search.trim())
     if (statusFilter !== 'ALL') params.set('status', statusFilter)
     if (roleFilter !== 'ALL') params.set('role', roleFilter)
     if (verificationFilter !== 'ALL') params.set('verification', verificationFilter)
     return params.toString()
-  }, [roleFilter, search, statusFilter, verificationFilter])
+  }, [page, roleFilter, search, statusFilter, verificationFilter])
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users', queryString],
@@ -96,7 +118,12 @@ export default function AdminUsersPage() {
   })
 
   const users = useMemo(() => (data?.data || []) as UserRecord[], [data])
+  const meta = data?.meta
   const roleOptions = useMemo(() => ((rolesData?.data as unknown as { roles?: RoleOption[] })?.roles || []), [rolesData])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, statusFilter, roleFilter, verificationFilter])
 
   const stats = useMemo(() => {
     return {
@@ -145,10 +172,21 @@ export default function AdminUsersPage() {
     onError: (error: Error) => toast.error(error.message || 'User delete failed'),
   })
 
-  function openCreateModal() {
+  const quickStatusMutation = useMutation({
+    mutationFn: ({ userId, status }: { userId: string; status: UserFormState['status'] }) =>
+      patch('/admin/users', { userId, status }),
+    onSuccess: (_, variables) => {
+      toast.success(variables.status === 'SUSPENDED' ? 'User banned successfully' : 'User unbanned successfully')
+      qc.invalidateQueries({ queryKey: ['admin-users'] })
+      setStatusTarget(null)
+    },
+    onError: (error: Error) => toast.error(error.message || 'User status update failed'),
+  })
+
+  function openCreateModal(defaultRoles?: string[]) {
     setModalMode('create')
     setSelectedUser(null)
-    setUserForm(emptyForm)
+    setUserForm({ ...emptyForm, roles: defaultRoles || [] })
     setModalOpen(true)
   }
 
@@ -190,7 +228,7 @@ export default function AdminUsersPage() {
               </p>
             </div>
             <button
-              onClick={openCreateModal}
+              onClick={() => openCreateModal()}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-orange-600"
             >
               <Plus className="h-4 w-4" />
@@ -208,6 +246,53 @@ export default function AdminUsersPage() {
       </section>
 
       <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button onClick={() => openCreateModal(['BUYER'])} className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+            <Plus className="h-4 w-4" />
+            Add buyer
+          </button>
+          <button onClick={() => openCreateModal(['SUPPLIER_OWNER'])} className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+            <Plus className="h-4 w-4" />
+            Add supplier
+          </button>
+          <button onClick={() => setRoleFilter('BUYER')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Show buyers
+          </button>
+          <button onClick={() => setRoleFilter('SUPPLIER')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Show suppliers
+          </button>
+          <button onClick={() => setRoleFilter('ALL')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Show registered list
+          </button>
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+          {[
+            { key: 'ALL', label: 'All Registered', hint: `${users.length} users`, tone: 'slate' },
+            { key: 'BUYER', label: 'Buyers', hint: `${users.filter((user) => user.roles.some((role) => role.role.name.includes('BUYER'))).length} accounts`, tone: 'blue' },
+            { key: 'SUPPLIER', label: 'Suppliers', hint: `${users.filter((user) => user.roles.some((role) => role.role.name.includes('SUPPLIER'))).length} accounts`, tone: 'emerald' },
+          ].map((tab) => {
+            const active = roleFilter === tab.key
+            const activeClass =
+              tab.tone === 'blue'
+                ? 'bg-blue-600 text-white'
+                : tab.tone === 'emerald'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-900 text-white'
+
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setRoleFilter(tab.key)}
+                className={`rounded-2xl px-4 py-3 text-left transition ${active ? activeClass : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+              >
+                <p className="text-sm font-semibold">{tab.label}</p>
+                <p className={`text-xs ${active ? 'text-white/80' : 'text-slate-500'}`}>{tab.hint}</p>
+              </button>
+            )
+          })}
+        </div>
+
         <div className="grid gap-3 lg:grid-cols-4">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or email" className={inputCls} />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={inputCls}>
@@ -237,9 +322,11 @@ export default function AdminUsersPage() {
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-slate-950">User directory</h2>
-            <p className="mt-1 text-sm text-slate-500">CRUD, roles, verification, and company membership overview.</p>
+            <p className="mt-1 text-sm text-slate-500">Clean registered user table with role, company, KYC, and action controls.</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{users.length} records</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+            {meta?.total || users.length} records
+          </span>
         </div>
 
         {isLoading ? (
@@ -247,55 +334,165 @@ export default function AdminUsersPage() {
             <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
           </div>
         ) : users.length ? (
-          <div className="space-y-4">
-            {users.map((user) => (
-              <div key={user.id} className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-bold text-slate-950">
-                        {user.firstName} {user.lastName}
-                      </h3>
-                      <StatusBadge status={user.status} />
-                      <VerifyBadge verified={!!user.emailVerified} />
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600">{user.email}</p>
-                    {user.phone ? <p className="mt-1 text-sm text-slate-500">{user.phone}</p> : null}
+          <div className="overflow-hidden rounded-[24px] border border-slate-200">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <th className="px-4 py-3">User</th>
+                    <th className="px-4 py-3">Roles</th>
+                    <th className="px-4 py-3">Company</th>
+                    <th className="px-4 py-3">KYC</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Joined</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {users.map((user) => (
+                    <tr key={user.id} className="align-top hover:bg-slate-50/70">
+                      <td className="px-4 py-4">
+                        <div className="min-w-[220px]">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-slate-950">{user.firstName} {user.lastName}</p>
+                            <VerifyBadge verified={!!user.emailVerified} />
+                          </div>
+                          <p className="mt-1 text-sm text-slate-600">{user.email}</p>
+                          <p className="mt-1 text-xs text-slate-500">{user.phone || 'No phone'}</p>
+                          <p className="mt-2 text-xs text-slate-500">
+                            Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : 'Never'}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex min-w-[180px] flex-wrap gap-2">
+                          {user.roles.map((role) => (
+                            <span key={role.role.name} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                              {role.role.name}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="min-w-[220px] text-sm text-slate-600">
+                          {user.b2bCompanyOwned ? (
+                            <>
+                              <p className="font-semibold text-slate-900">{user.b2bCompanyOwned.companyName}</p>
+                              <p className="mt-1 text-xs text-slate-500">{user.b2bCompanyOwned.companyType.replace(/_/g, ' ')}</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                                  Buyer: {user.b2bCompanyOwned.buyerVerificationStatus}
+                                </span>
+                                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                                  Supplier: {user.b2bCompanyOwned.supplierVerificationStatus}
+                                </span>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-sm text-slate-500">No registered B2B company.</p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="min-w-[130px]">
+                          {user.kycProfile ? (
+                            <>
+                              <p className="text-sm font-semibold text-slate-900">{user.kycProfile.status}</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {user.kycProfile.reviewedAt ? new Date(user.kycProfile.reviewedAt).toLocaleDateString() : 'Awaiting review'}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-sm text-slate-500">No KYC</p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <StatusBadge status={user.status} />
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="min-w-[90px] text-sm text-slate-600">{new Date(user.createdAt).toLocaleDateString()}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex min-w-[250px] flex-wrap gap-2">
+                          {user.b2bCompanyOwned ? (
+                            <Link
+                              href={`/admin/b2b/companies/${user.b2bCompanyOwned.id}?audience=${user.roles.some((role) => role.role.name.includes('SUPPLIER')) ? 'supplier' : 'buyer'}`}
+                              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              <Building2 className="h-3.5 w-3.5" />
+                              Company
+                            </Link>
+                          ) : null}
+                          {user.kycProfile ? (
+                            <Link
+                              href={`/admin/kyc?userId=${user.id}`}
+                              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              KYC
+                            </Link>
+                          ) : null}
+                          <button
+                            onClick={() => openEditModal(user)}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeleteTarget(user)}
+                            className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </button>
+                          <button
+                            onClick={() => setStatusTarget(user)}
+                            disabled={quickStatusMutation.isPending}
+                            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
+                              user.status === 'SUSPENDED'
+                                ? 'border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'
+                                : 'border border-amber-200 bg-white text-amber-700 hover:bg-amber-50'
+                            }`}
+                          >
+                            <Ban className="h-3.5 w-3.5" />
+                            {user.status === 'SUSPENDED' ? 'Unban' : 'Ban'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {user.roles.map((role) => (
-                        <span key={role.role.name} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                          {role.role.name}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 grid gap-2 text-sm text-slate-500 md:grid-cols-3">
-                      <p>Companies: {user.companyUsers.map((companyUser) => companyUser.company.name).join(', ') || 'None'}</p>
-                      <p>Joined: {new Date(user.createdAt).toLocaleDateString()}</p>
-                      <p>Last login: {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : 'Never'}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => openEditModal(user)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(user)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
+            <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500">
+                Showing page {meta?.page || page} of {Math.max(meta?.totalPages || 1, 1)}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={(meta?.page || page) <= 1}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Previous
+                </button>
+                <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+                  {(meta?.page || page)} / {Math.max(meta?.totalPages || 1, 1)}
+                </span>
+                <button
+                  onClick={() => setPage((current) => current + 1)}
+                  disabled={(meta?.page || page) >= Math.max(meta?.totalPages || 1, 1)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                  <ArrowRight className="h-4 w-4" />
+                </button>
               </div>
-            ))}
+            </div>
           </div>
         ) : (
           <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center text-sm text-slate-500">
@@ -340,6 +537,62 @@ export default function AdminUsersPage() {
                 className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
               >
                 {deleteMutation.isPending ? 'Deleting...' : 'Confirm delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {statusTarget ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-4">
+          <div className="w-full max-w-xl rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${statusTarget.status === 'SUSPENDED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                <CircleAlert className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-950">{statusTarget.status === 'SUSPENDED' ? 'Unban registered user' : 'Ban registered user'}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  {statusTarget.status === 'SUSPENDED'
+                    ? 'This will restore account access and return the user to the active marketplace unless other restrictions still apply.'
+                    : 'This will immediately suspend account access across buyer, supplier, and admin entry points until the user is restored.'}
+                </p>
+              </div>
+            </div>
+
+            <div className={`mt-5 rounded-2xl border px-4 py-4 text-sm ${
+              statusTarget.status === 'SUSPENDED'
+                ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+                : 'border-amber-100 bg-amber-50 text-amber-800'
+            }`}>
+              <p className="font-semibold">{statusTarget.firstName} {statusTarget.lastName}</p>
+              <p className="mt-1">{statusTarget.email}</p>
+              <p className="mt-2 text-xs uppercase tracking-[0.14em]">
+                Current status: {statusTarget.status.replace('_', ' ')}
+              </p>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button onClick={() => setStatusTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  quickStatusMutation.mutate({
+                    userId: statusTarget.id,
+                    status: statusTarget.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED',
+                  })
+                }
+                disabled={quickStatusMutation.isPending}
+                className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 ${
+                  statusTarget.status === 'SUSPENDED' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {quickStatusMutation.isPending
+                  ? 'Updating...'
+                  : statusTarget.status === 'SUSPENDED'
+                    ? 'Confirm unban'
+                    : 'Confirm ban'}
               </button>
             </div>
           </div>

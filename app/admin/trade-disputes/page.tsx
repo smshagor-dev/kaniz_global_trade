@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { get, patch } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
@@ -8,19 +9,26 @@ interface Dispute {
   id: string
   reason: string
   status: string
-  tradeOrder: { productName: string }
+  refundAmount?: number | null
+  tradeOrder: { productName: string; totalAmount?: number }
   buyer: { firstName: string; lastName: string; email: string }
   supplierCompany: { name: string }
 }
 
 export default function AdminTradeDisputesPage() {
+  const [partialRefund, setPartialRefund] = useState<Record<string, string>>({})
+
   const { data, refetch } = useQuery({
     queryKey: ['admin-trade-disputes'],
     queryFn: () => get<Dispute[]>('/admin/trade-disputes'),
   })
 
   async function resolve(disputeId: string, resolution: 'BUYER_REFUND' | 'SUPPLIER_RELEASE' | 'PARTIAL_REFUND' | 'REJECT') {
-    await patch('/admin/trade-disputes', { disputeId, resolution })
+    const refundAmount =
+      resolution === 'PARTIAL_REFUND'
+        ? Number(partialRefund[disputeId] || 0)
+        : undefined
+    await patch('/admin/trade-disputes', { disputeId, resolution, refundAmount })
     toast.success('Dispute resolved')
     refetch()
   }
@@ -43,6 +51,19 @@ export default function AdminTradeDisputesPage() {
             </p>
             <p className="text-sm text-gray-700 mt-2">{dispute.reason}</p>
             <p className="text-xs text-gray-500 mt-1">{dispute.status}</p>
+            <div className="mt-3 max-w-xs">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Partial refund amount"
+                value={partialRefund[dispute.id] || ''}
+                onChange={(event) =>
+                  setPartialRefund((current) => ({ ...current, [dispute.id]: event.target.value }))
+                }
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+            </div>
             <div className="flex gap-2 mt-4 flex-wrap">
               <button onClick={() => resolve(dispute.id, 'BUYER_REFUND')} className="px-3 py-2 rounded-lg border border-red-200 text-red-700 text-sm">Refund Buyer</button>
               <button onClick={() => resolve(dispute.id, 'SUPPLIER_RELEASE')} className="px-3 py-2 rounded-lg bg-green-700 text-white text-sm">Release Supplier</button>

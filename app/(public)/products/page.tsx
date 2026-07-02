@@ -4,6 +4,7 @@ import type { Metadata } from 'next'
 import { CatalogCard } from '@/components/public/home/catalog-card'
 import { expandMarketplaceSearchQuery } from '@/lib/ai/google-marketplace-search'
 import { UserHistoryTracker } from '@/components/history/user-history-tracker'
+import { getProductRatingSummaries } from '@/lib/ratings/public'
 
 export const metadata: Metadata = {
   title: 'Browse Products',
@@ -101,8 +102,19 @@ async function getProducts(params: Record<string, string>) {
       },
     }),
   ])
+  const productRatingMap = await getProductRatingSummaries(products.map((product) => product.id))
 
-  return { products, total, categories, page, limit, expanded }
+  return {
+    products: products.map((product) => ({
+      ...product,
+      ratingSummary: productRatingMap.get(product.id) || { average: 0, count: 0 },
+    })),
+    total,
+    categories,
+    page,
+    limit,
+    expanded,
+  }
 }
 
 export default async function ProductsPage({ searchParams }: Props) {

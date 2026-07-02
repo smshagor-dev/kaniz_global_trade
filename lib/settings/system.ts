@@ -11,11 +11,15 @@ export interface SettingDefinition {
 }
 
 export const SYSTEM_SETTING_DEFINITIONS: SettingDefinition[] = [
-  { key: 'GOOGLE_AI_SEARCH_ENABLED', group: 'AI', label: 'Google AI Search Enabled', type: 'BOOLEAN', description: 'Enable Google Gemini powered query expansion and image analysis for marketplace search.', fallback: 'false' },
-  { key: 'GOOGLE_GEMINI_API_KEY', group: 'AI', label: 'Google Gemini API Key', type: 'PASSWORD', isSecret: true, description: 'API key used for Google Gemini text search enhancement and AI image search analysis.', fallback: process.env.GOOGLE_GEMINI_API_KEY || '' },
-  { key: 'GOOGLE_AI_TEXT_MODEL', group: 'AI', label: 'Google AI Text Model', type: 'STRING', description: 'Gemini model used for text query understanding and marketplace search expansion.', fallback: process.env.GOOGLE_AI_TEXT_MODEL || 'gemini-2.0-flash' },
-  { key: 'GOOGLE_AI_IMAGE_MODEL', group: 'AI', label: 'Google AI Image Model', type: 'STRING', description: 'Gemini multimodal model used for AI image search and tag extraction.', fallback: process.env.GOOGLE_AI_IMAGE_MODEL || 'gemini-2.0-flash' },
-  { key: 'GOOGLE_AI_SEARCH_MAX_TERMS', group: 'AI', label: 'AI Search Max Terms', type: 'NUMBER', description: 'Maximum number of normalized search terms returned from Google AI for marketplace matching.', fallback: process.env.GOOGLE_AI_SEARCH_MAX_TERMS || '8' },
+  { key: 'AI_MULTI_AGENT_ENABLED', group: 'AI', label: 'Multi Agent Enabled', type: 'BOOLEAN', description: 'Enable orchestration across all saved AI providers for text search and image search.', fallback: 'true' },
+  { key: 'AI_MULTI_AGENT_MAX_TERMS', group: 'AI', label: 'AI Search Max Terms', type: 'NUMBER', description: 'Maximum number of normalized search terms returned from the multi-agent search pipeline.', fallback: '8' },
+  { key: 'AI_MULTI_AGENT_PROVIDERS', group: 'AI', label: 'AI Provider Records', type: 'STRING', description: 'JSON storage used by the admin multi-agent provider table. Managed from the AI settings page.', fallback: '[]' },
+  { key: 'AI_MATCHING_ENABLED', group: 'AI', label: 'AI Matching Enabled', type: 'BOOLEAN', description: 'Enable persisted AI-assisted RFQ to supplier matching across buyer RFQ workflows.', fallback: 'true' },
+  { key: 'AI_MATCHING_MAX_COMPANIES', group: 'AI', label: 'AI Matching Candidate Companies', type: 'NUMBER', description: 'Maximum number of candidate supplier companies to score before AI reranking and cache persistence.', fallback: '80' },
+  { key: 'AI_MATCHING_RESULT_LIMIT', group: 'AI', label: 'AI Matching Result Limit', type: 'NUMBER', description: 'Maximum number of ranked supplier matches returned and cached for each RFQ.', fallback: '12' },
+  { key: 'AI_MATCHING_MIN_SCORE', group: 'AI', label: 'AI Matching Minimum Score', type: 'NUMBER', description: 'Minimum deterministic or AI-adjusted score required before a supplier is retained in the RFQ match list.', fallback: '20' },
+  { key: 'AI_MATCHING_REFRESH_HOURS', group: 'AI', label: 'AI Matching Refresh Hours', type: 'NUMBER', description: 'How long RFQ match snapshots stay fresh before a new computation is triggered.', fallback: '12' },
+  { key: 'AI_MATCHING_NOTIFY_LIMIT', group: 'AI', label: 'AI Matching Supplier Notify Limit', type: 'NUMBER', description: 'Maximum number of top-ranked supplier owners notified when a public RFQ is published.', fallback: '20' },
   { key: 'HOME_DISCOVERY_ENABLED', group: 'HOME', label: 'Discovery Hero Enabled', type: 'BOOLEAN', description: 'Show the top marketplace discovery/search hero on the home page.', fallback: 'true' },
   { key: 'HOME_STATS_BAR_ENABLED', group: 'HOME', label: 'Stats Bar Enabled', type: 'BOOLEAN', description: 'Show the marketplace stats strip below the hero area.', fallback: 'true' },
   { key: 'HOME_FREQUENT_SEARCHES_ENABLED', group: 'HOME', label: 'Frequently Searched Section Enabled', type: 'BOOLEAN', description: 'Show the frequently searched shortcut section on the home page.', fallback: 'true' },
@@ -130,7 +134,7 @@ export const SYSTEM_SETTING_DEFINITIONS: SettingDefinition[] = [
 ]
 
 export const SETTINGS_GROUPS = [
-  { key: 'AI', label: 'AI Search & Image Search' },
+  { key: 'AI', label: 'AI Studio' },
   { key: 'HOME', label: 'Home Page' },
   { key: 'PAYMENT', label: 'Payment Gateways' },
   { key: 'SHIPPING', label: 'Shipping & Tracking' },
@@ -174,8 +178,15 @@ export async function ensureSystemSettingsSeeded() {
 
 export async function getSettingsByGroup(group: string) {
   await ensureSystemSettingsSeeded()
+  const allowedKeys = SYSTEM_SETTING_DEFINITIONS
+    .filter((item) => item.group === group)
+    .map((item) => item.key)
+
   return prisma.systemSetting.findMany({
-    where: { group },
+    where: {
+      group,
+      key: { in: allowedKeys },
+    },
     orderBy: { key: 'asc' },
   })
 }

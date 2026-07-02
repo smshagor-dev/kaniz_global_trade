@@ -107,6 +107,8 @@ function LoginPageContent() {
     toast.success(`${account.role} demo credentials inserted`)
   }
 
+  const showDemoAccounts = DEMO_ACCOUNTS.length > 0
+
   if (currentUser) {
     return <div className="min-h-screen bg-slate-100" />
   }
@@ -130,32 +132,34 @@ function LoginPageContent() {
         </div>
 
         <div className="p-8">
-          <div className="mb-5 rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-bold text-slate-900">Demo Login</p>
-                <p className="mt-1 text-xs leading-5 text-slate-600">
-                  Select a role and the form will auto-fill the demo email and password.
-                </p>
+          {showDemoAccounts ? (
+            <div className="mb-5 rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Demo Login</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    Select a role and the form will auto-fill the demo email and password.
+                  </p>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-orange-600">
+                  Demo
+                </span>
               </div>
-              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-orange-600">
-                Demo
-              </span>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {DEMO_ACCOUNTS.map((account) => (
+                  <button
+                    key={account.role}
+                    type="button"
+                    onClick={() => fillDemoAccount(account)}
+                    className="rounded-xl border border-orange-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 hover:bg-orange-100/50"
+                  >
+                    <p className="text-sm font-semibold text-slate-900">{account.role}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{account.email}</p>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              {DEMO_ACCOUNTS.map((account) => (
-                <button
-                  key={account.role}
-                  type="button"
-                  onClick={() => fillDemoAccount(account)}
-                  className="rounded-xl border border-orange-200 bg-white px-3 py-3 text-left transition hover:border-orange-300 hover:bg-orange-100/50"
-                >
-                  <p className="text-sm font-semibold text-slate-900">{account.role}</p>
-                  <p className="mt-1 truncate text-xs text-slate-500">{account.email}</p>
-                </button>
-              ))}
-            </div>
-          </div>
+          ) : null}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {(socialProviders?.data?.google?.enabled || socialProviders?.data?.facebook?.enabled) ? (

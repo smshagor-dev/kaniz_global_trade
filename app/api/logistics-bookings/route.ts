@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import QRCode from 'qrcode'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, ROLES, ApiError, isAdmin, isSupplier } from '@/lib/permissions'
+import { requireAuth, ROLES, ApiError, isAdmin, isSupplier, assertComplianceAccess } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { listAvailableLogisticsProviders } from '@/lib/shipping/providers'
 import { createNotification } from '@/server/services/notification'
@@ -303,6 +303,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (!companyId) throw new ApiError(422, 'Company required')
+    if (!isAdmin(authUser)) {
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'SUPPLIER',
+        companyId,
+      })
+    }
 
     const providers = await listAvailableLogisticsProviders()
     const verificationToken = randomBytes(18).toString('hex')

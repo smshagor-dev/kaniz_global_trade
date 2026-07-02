@@ -6,6 +6,9 @@ import { generateTokenPair } from '@/lib/auth/jwt'
 import { successResponse, errorResponse, handleApiError } from '@/lib/utils/api'
 import { checkRateLimit, resetRateLimit } from '@/lib/db/redis'
 import { logLogin } from '@/lib/utils/audit'
+import { logAuthFailureEvent } from '@/lib/monitoring/event-helpers'
+import { FraudEventType, FraudRiskLevel } from '@prisma/client'
+import { screenFraudEvent, upsertFraudDeviceLog } from '@/lib/fraud/service'
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -24,7 +27,15 @@ export async function POST(req: NextRequest) {
     const loginRateLimitKey = `login:${ip}:${data.email.toLowerCase()}`
 
     const { allowed } = await checkRateLimit(loginRateLimitKey, 10, 900)
-    if (!allowed) return errorResponse('Too many login attempts. Try again in 15 minutes.', 429)
+    if (!allowed) {
+      await logAuthFailureEvent({
+        message: 'Login blocked by rate limit.',
+        ipAddress: ip,
+        email: data.email,
+        reason: 'rate_limit',
+      })
+      return errorResponse('Too many login attempts. Try again in 15 minutes.', 429)
+    }
 
     const user = await prisma.user.findUnique({
       where: { email: data.email, deletedAt: null },
@@ -35,6 +46,12 @@ export async function POST(req: NextRequest) {
     })
 
     if (!user || !(await verifyPassword(user.password, data.password))) {
+      await logAuthFailureEvent({
+        message: 'Login failed due to invalid credentials.',
+        ipAddress: ip,
+        email: data.email,
+        reason: 'invalid_credentials',
+      })
       return errorResponse('Invalid email or password', 401)
     }
 
@@ -48,7 +65,23 @@ export async function POST(req: NextRequest) {
     }
 
     if (user.status === 'SUSPENDED') {
+      await logAuthFailureEvent({
+        message: 'Login blocked because the account is suspended.',
+        ipAddress: ip,
+        email: data.email,
+        reason: 'suspended',
+      })
       return errorResponse('Your account has been suspended. Contact support.', 403)
+    }
+
+    if (user.fraudRiskLevel === FraudRiskLevel.BLOCKED) {
+      await logAuthFailureEvent({
+        message: 'Login blocked because the account is under security review.',
+        ipAddress: ip,
+        email: data.email,
+        reason: 'fraud_blocked',
+      })
+      return errorResponse('Your account is blocked pending a security review.', 403)
     }
 
     // 2FA check
@@ -69,6 +102,12 @@ export async function POST(req: NextRequest) {
       })
 
       if (!totp.validate({ token: data.twoFactorCode, window: 1 })) {
+        await logAuthFailureEvent({
+          message: 'Login failed due to invalid two-factor code.',
+          ipAddress: ip,
+          email: data.email,
+          reason: 'invalid_2fa',
+        })
         return errorResponse('Invalid two-factor code', 401)
       }
     }
@@ -89,6 +128,26 @@ export async function POST(req: NextRequest) {
         lastLoginIp: ip,
         status: user.status === 'PENDING_VERIFICATION' ? user.status : 'ACTIVE',
       },
+    })
+
+    const fraudResult = await screenFraudEvent({
+      req,
+      actorUserId: user.id,
+      userId: user.id,
+      eventType: FraudEventType.LOGIN,
+      sourceModule: 'auth/login',
+      title: 'Marketplace login',
+      summary: 'Buyer or supplier login completed.',
+      payload: {
+        email: data.email,
+        rememberMe: data.rememberMe,
+      },
+    })
+
+    await upsertFraudDeviceLog({
+      userId: user.id,
+      req,
+      riskLevel: fraudResult.user?.level,
     })
 
     await logLogin(user.id, ip, ua)

@@ -10,6 +10,8 @@ import { checkRateLimit } from '@/lib/db/redis'
 import { createAuditLog } from '@/lib/utils/audit'
 import { uniqueSlug } from '@/lib/utils/slug'
 import { isFreePlan } from '@/lib/packages'
+import { FraudEventType } from '@prisma/client'
+import { screenFraudEvent } from '@/lib/fraud/service'
 
 const registerSchema = z.object({
   firstName: z.string().min(2).max(50),
@@ -199,6 +201,24 @@ export async function POST(req: NextRequest) {
       targetType: 'User',
       targetId: user.id,
       ipAddress: ip,
+    })
+
+    await screenFraudEvent({
+      req,
+      actorUserId: user.id,
+      userId: user.id,
+      companyId: user.companyId,
+      eventType: FraudEventType.REGISTRATION,
+      sourceModule: 'auth/register',
+      title: 'New marketplace registration',
+      summary: `${data.role === 'SUPPLIER_OWNER' ? 'Supplier' : 'Buyer'} registration submitted.`,
+      payload: {
+        role: data.role,
+        email: data.email,
+        companyName: data.companyName,
+        packageSlug: data.packageSlug,
+        phone: data.phone,
+      },
     })
 
     return successResponse(

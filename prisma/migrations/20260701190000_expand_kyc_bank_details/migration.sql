@@ -1,0 +1,11 @@
+ALTER TABLE `KYCProfile`
+  ADD COLUMN `bankAccountType` VARCHAR(191) NULL,
+  ADD COLUMN `bankCurrency` VARCHAR(191) NULL,
+  ADD COLUMN `bankBranchName` VARCHAR(191) NULL,
+  ADD COLUMN `bankBranchCode` VARCHAR(191) NULL,
+  ADD COLUMN `bankRoutingNumber` VARCHAR(191) NULL,
+  ADD COLUMN `bankSwiftCode` VARCHAR(191) NULL,
+  ADD COLUMN `bankIban` VARCHAR(191) NULL,
+  ADD COLUMN `bankCountry` VARCHAR(191) NULL,
+  ADD COLUMN `bankCity` VARCHAR(191) NULL,
+  ADD COLUMN `bankAddress` TEXT NULL;

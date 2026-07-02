@@ -1,7 +1,11 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { FeeType } = require('@prisma/client')
-const { calculateFeeAmount, FeeCalculationService } = require('../../lib/finance/service-fees')
+const {
+  calculateFeeAmount,
+  calculateTradeOrderFinancialBreakdown,
+  FeeCalculationService,
+} = require('../../lib/finance/service-fees')
 
 test('percentage fee calculation applies percentage correctly', () => {
   assert.equal(calculateFeeAmount(FeeType.PERCENTAGE, 2, 50000), 1000)
@@ -14,6 +18,20 @@ test('fixed fee calculation returns configured fixed value', () => {
 test('min and max fee bounds are respected', () => {
   assert.equal(calculateFeeAmount(FeeType.PERCENTAGE, 1, 100, 5, 25), 5)
   assert.equal(calculateFeeAmount(FeeType.PERCENTAGE, 20, 1000, 5, 25), 25)
+})
+
+test('trade order breakdown keeps escrow fee on buyer side and platform deductions on supplier side', () => {
+  const result = calculateTradeOrderFinancialBreakdown({
+    subtotal: 1000,
+    shippingCost: 50,
+    escrowFee: 20,
+    platformCommissionAmount: 25,
+  })
+
+  assert.equal(result.grossOrderAmount, 1050)
+  assert.equal(result.buyerEscrowFundingTotal, 1070)
+  assert.equal(result.supplierNetReceivable, 1025)
+  assert.equal(result.platformRetainedTotal, 45)
 })
 
 test('disabled fee cannot be applied', async () => {
@@ -46,6 +64,7 @@ test('supplier payout calculation deducts platform fee from gross order amount',
       findUnique: async () => ({
         id: 'order-1',
         subtotal: 50000,
+        shippingCost: 500,
         platformCommissionAmount: 1000,
         escrowFee: 300,
         currencyCode: 'USD',
@@ -59,9 +78,9 @@ test('supplier payout calculation deducts platform fee from gross order amount',
   })
 
   const payout = await service.calculateSupplierPayout('order-1')
-  assert.equal(payout.grossOrderAmount, 50000)
+  assert.equal(payout.grossOrderAmount, 50500)
   assert.equal(payout.platformFee, 1000)
-  assert.equal(payout.netPayoutAmount, 49000)
+  assert.equal(payout.netPayoutAmount, 49500)
 })
 
 test('transaction fee lookup uses active admin setting', async () => {

@@ -6,7 +6,7 @@ import { get, post } from '@/lib/utils/api-client'
 import { CurrencyAmount } from '@/components/currency/currency-amount'
 import { useCurrentUser } from '@/store/auth'
 import toast from 'react-hot-toast'
-import { FileText, Loader2, PackageCheck, ShieldCheck, Truck } from 'lucide-react'
+import { FileText, Loader2, PackageCheck, ShieldCheck, Star, Truck } from 'lucide-react'
 
 interface TradeOrder {
   id: string
@@ -37,7 +37,7 @@ interface TradeOrder {
     deliveredAt?: string | null
   }>
   disputes: Array<{ id: string; status: string }>
-  ratings?: Array<{ id: string; authorUserId: string; createdAt: string }>
+  ratings?: Array<{ id: string; authorUserId: string; rating: number; createdAt: string }>
 }
 
 interface LogisticsProvidersResponse {
@@ -291,7 +291,7 @@ export default function SupplierTradeOrdersPage() {
                           Platform deduction: <CurrencyAmount amount={order.platformCommissionAmount} currencyCode={order.currencyCode} showCode />
                         </p>
                         <p className="mt-1 text-xs text-[#738076]">
-                          Escrow deduction: <CurrencyAmount amount={order.escrowFee} currencyCode={order.currencyCode} showCode />
+                          Buyer-paid escrow fee: <CurrencyAmount amount={order.escrowFee} currencyCode={order.currencyCode} showCode />
                         </p>
                         <p className="mt-1 text-xs font-semibold text-[#1f2937]">
                           Net receivable: <CurrencyAmount amount={Number(order.subtotal) - Number(order.platformCommissionAmount)} currencyCode={order.currencyCode} showCode />
@@ -398,20 +398,24 @@ export default function SupplierTradeOrdersPage() {
                       </td>
                       <td className="px-6 py-4">
                         {myRating ? (
-                          <p className="text-sm font-medium text-[#3e5840]">You already rated this buyer</p>
+                          <div className="min-w-[140px] space-y-2">
+                            <p className="text-sm font-medium text-[#3e5840]">You already rated this buyer</p>
+                            <div className="flex items-center gap-1">
+                              <StaticStars
+                                value={order.ratings?.find((entry) => entry.authorUserId === user?.id)?.rating || 5}
+                              />
+                            </div>
+                          </div>
                         ) : canRate ? (
                           <div className="min-w-[140px] space-y-2">
-                            <input
-                              type="number"
-                              min={1}
-                              max={5}
+                            <StarPicker
                               value={rating[order.id] || 5}
-                              onChange={(event) =>
-                                setRating((current) => ({ ...current, [order.id]: Number(event.target.value) }))
+                              onChange={(value) =>
+                                setRating((current) => ({ ...current, [order.id]: value }))
                               }
-                              className={inputCls}
                               disabled={rowLoading === 'rating'}
                             />
+                            <p className="text-xs text-[#738076]">{rating[order.id] || 5} of 5 stars</p>
                             <button
                               type="button"
                               onClick={() => rateBuyer(order.id)}
@@ -499,4 +503,46 @@ function getEscrowStatusTone(status?: string) {
     default:
       return 'bg-[#eef1eb] text-[#5f6862]'
   }
+}
+
+function StarPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number
+  onChange: (value: number) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange(star)}
+          disabled={disabled}
+          className="rounded-full p-1 transition hover:bg-[#f3f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+        >
+          <Star
+            className={`h-5 w-5 ${star <= value ? 'fill-[#f4b740] text-[#f4b740]' : 'text-[#c8d0c1]'}`}
+          />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function StaticStars({ value }: { value: number }) {
+  return (
+    <>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Star
+          key={star}
+          className={`h-4 w-4 ${star <= value ? 'fill-[#f4b740] text-[#f4b740]' : 'text-[#c8d0c1]'}`}
+        />
+      ))}
+    </>
+  )
 }

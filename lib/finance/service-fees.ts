@@ -39,6 +39,20 @@ export interface CalculatedTaxResult {
   applicationMode: TaxApplicationMode | null
 }
 
+export interface TradeOrderFinancialBreakdownInput {
+  subtotal: number
+  shippingCost?: number
+  escrowFee?: number
+  platformCommissionAmount?: number
+}
+
+export interface TradeOrderFinancialBreakdown {
+  grossOrderAmount: number
+  buyerEscrowFundingTotal: number
+  supplierNetReceivable: number
+  platformRetainedTotal: number
+}
+
 export interface RevenueLedgerInput {
   sourceType: string
   sourceId: string
@@ -111,6 +125,20 @@ function applyFeeBounds(amount: number, minFee?: number | null, maxFee?: number 
   if (typeof minFee === 'number') next = Math.max(next, minFee)
   if (typeof maxFee === 'number') next = Math.min(next, maxFee)
   return roundMoney(next)
+}
+
+export function calculateTradeOrderFinancialBreakdown(input: TradeOrderFinancialBreakdownInput): TradeOrderFinancialBreakdown {
+  const grossOrderAmount = roundMoney(input.subtotal + (input.shippingCost ?? 0))
+  const buyerEscrowFundingTotal = roundMoney(grossOrderAmount + (input.escrowFee ?? 0))
+  const supplierNetReceivable = roundMoney(grossOrderAmount - (input.platformCommissionAmount ?? 0))
+  const platformRetainedTotal = roundMoney(buyerEscrowFundingTotal - supplierNetReceivable)
+
+  return {
+    grossOrderAmount,
+    buyerEscrowFundingTotal,
+    supplierNetReceivable,
+    platformRetainedTotal,
+  }
 }
 
 export function calculateFeeAmount(
@@ -280,19 +308,24 @@ export class FeeCalculationService {
 
     if (!order) throw new ApiError(404, 'Trade order not found')
 
-    const grossOrderAmount = asNumber(order.subtotal)
     const platformFee = asNumber(order.platformCommissionAmount)
     const escrowFee = asNumber(order.escrowFee)
+    const breakdown = calculateTradeOrderFinancialBreakdown({
+      subtotal: asNumber(order.subtotal),
+      shippingCost: asNumber(order.shippingCost),
+      escrowFee,
+      platformCommissionAmount: platformFee,
+    })
     const shippingFee = order.shippingCommissions.reduce((sum, item) => sum + asNumber(item.commissionAmount), 0)
     const otherDeduction = 0
-    const netPayoutAmount = roundMoney(grossOrderAmount - platformFee - otherDeduction)
+    const netPayoutAmount = roundMoney(breakdown.supplierNetReceivable - otherDeduction)
 
     return {
       supplierId: order.supplierCompany.companyUsers[0]?.userId || null,
       companyId: order.supplierCompanyId,
       tradeOrderId: order.id,
       orderId: order.id,
-      grossOrderAmount,
+      grossOrderAmount: breakdown.grossOrderAmount,
       platformFee,
       escrowFee,
       shippingFee: roundMoney(shippingFee),
@@ -314,17 +347,23 @@ export class FeeCalculationService {
 
     const transactionFee = asNumber(order.platformCommissionAmount)
     const escrowFee = asNumber(order.escrowFee)
+    const breakdown = calculateTradeOrderFinancialBreakdown({
+      subtotal: asNumber(order.subtotal),
+      shippingCost: asNumber(order.shippingCost),
+      escrowFee,
+      platformCommissionAmount: transactionFee,
+    })
     const shippingCommission = order.shippingCommissions.reduce((sum, item) => sum + asNumber(item.platformProfit), 0)
     const totalProfit = roundMoney(transactionFee + escrowFee + shippingCommission)
 
     return {
       orderId: order.id,
-      orderValue: asNumber(order.subtotal),
+      orderValue: breakdown.grossOrderAmount,
       transactionFee,
       escrowFee,
       shippingCommission: roundMoney(shippingCommission),
       totalProfit,
-      supplierPayout: roundMoney(asNumber(order.subtotal) - transactionFee),
+      supplierPayout: breakdown.supplierNetReceivable,
       currency: order.currencyCode,
     }
   }

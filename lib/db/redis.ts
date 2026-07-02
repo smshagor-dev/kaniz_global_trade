@@ -1,3 +1,4 @@
+import 'server-only'
 import { Redis } from 'ioredis'
 
 type PipelineResult = Array<[Error | null, unknown]> | null

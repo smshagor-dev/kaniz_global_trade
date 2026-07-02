@@ -1211,7 +1211,8 @@ model ProductPriceTier {
   productId String
   minQty    Decimal  @db.Decimal(15, 2)
   maxQty    Decimal? @db.Decimal(15, 2)
-  price     Decimal  @db.Decimal(15, 2)
+  priceMin  Decimal  @db.Decimal(15, 2)
+  priceMax  Decimal? @db.Decimal(15, 2)
   createdAt DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)

@@ -1,13 +1,23 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, TaxApplicationMode, TaxType } from '@prisma/client'
 import { hashPassword } from '@/lib/auth/password'
-import { DEMO_ACCOUNT_BY_ROLE, DEMO_ACCOUNTS } from '@/lib/auth/demo-accounts'
+import { DEMO_ACCOUNT_BY_ROLE, resolveSeedAccounts } from '@/lib/auth/demo-accounts'
+import { COUNTRIES } from '@/lib/constants/countries'
 import {
   SERVICE_FEE_CATEGORY_SEEDS,
   SERVICE_FEE_SETTING_SEEDS,
   TAX_VAT_SETTING_SEEDS,
 } from '@/lib/finance/catalog'
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient(({
+  __internal: {
+    configOverride: (config: { copyEngine?: boolean }) => ({ ...config, copyEngine: true }),
+  },
+  log: process.env.PRISMA_LOG_QUERIES === 'true'
+    ? ['query', 'error', 'warn']
+    : ['error', 'warn'],
+} as unknown) as ConstructorParameters<typeof PrismaClient>[0])
+
+const SEEDED_ACCOUNTS = resolveSeedAccounts()
 
 async function main() {
   console.log('🌱 Seeding Kaniz Global Trade database...')
@@ -91,30 +101,17 @@ async function main() {
   }
 
   // ── Countries ──────────────────────────────────────────────
-  const countries = [
-    { name: 'United States',   code: 'US', dialCode: '+1',   flag: '🇺🇸', continent: 'North America' },
-    { name: 'China',           code: 'CN', dialCode: '+86',  flag: '🇨🇳', continent: 'Asia' },
-    { name: 'India',           code: 'IN', dialCode: '+91',  flag: '🇮🇳', continent: 'Asia' },
-    { name: 'Germany',         code: 'DE', dialCode: '+49',  flag: '🇩🇪', continent: 'Europe' },
-    { name: 'United Kingdom',  code: 'GB', dialCode: '+44',  flag: '🇬🇧', continent: 'Europe' },
-    { name: 'Bangladesh',      code: 'BD', dialCode: '+880', flag: '🇧🇩', continent: 'Asia' },
-    { name: 'Turkey',          code: 'TR', dialCode: '+90',  flag: '🇹🇷', continent: 'Asia' },
-    { name: 'Italy',           code: 'IT', dialCode: '+39',  flag: '🇮🇹', continent: 'Europe' },
-    { name: 'Japan',           code: 'JP', dialCode: '+81',  flag: '🇯🇵', continent: 'Asia' },
-    { name: 'Brazil',          code: 'BR', dialCode: '+55',  flag: '🇧🇷', continent: 'South America' },
-    { name: 'South Korea',     code: 'KR', dialCode: '+82',  flag: '🇰🇷', continent: 'Asia' },
-    { name: 'Vietnam',         code: 'VN', dialCode: '+84',  flag: '🇻🇳', continent: 'Asia' },
-    { name: 'Pakistan',        code: 'PK', dialCode: '+92',  flag: '🇵🇰', continent: 'Asia' },
-    { name: 'Indonesia',       code: 'ID', dialCode: '+62',  flag: '🇮🇩', continent: 'Asia' },
-    { name: 'UAE',             code: 'AE', dialCode: '+971', flag: '🇦🇪', continent: 'Asia' },
-    { name: 'Australia',       code: 'AU', dialCode: '+61',  flag: '🇦🇺', continent: 'Oceania' },
-    { name: 'Canada',          code: 'CA', dialCode: '+1',   flag: '🇨🇦', continent: 'North America' },
-    { name: 'France',          code: 'FR', dialCode: '+33',  flag: '🇫🇷', continent: 'Europe' },
-    { name: 'Mexico',          code: 'MX', dialCode: '+52',  flag: '🇲🇽', continent: 'North America' },
-    { name: 'Egypt',           code: 'EG', dialCode: '+20',  flag: '🇪🇬', continent: 'Africa' },
-  ]
-  for (const c of countries) {
-    await prisma.country.upsert({ where: { code: c.code }, create: c, update: {} })
+  for (const country of COUNTRIES) {
+    await prisma.country.upsert({
+      where: { code: country.code },
+      create: {
+        name: country.name,
+        code: country.code,
+      },
+      update: {
+        name: country.name,
+      },
+    })
   }
   console.log('✅ Countries created')
 
@@ -294,11 +291,48 @@ async function main() {
     })
   }
 
-  for (const taxRule of TAX_VAT_SETTING_SEEDS) {
+  const configuredTaxRules = new Map<string, {
+    code: string
+    country: string
+    stateRegion: string | null
+    taxName: string
+    taxRate: number
+    taxType: TaxType
+    applicationMode: TaxApplicationMode
+    appliesToBuyer: boolean
+    appliesToSupplier: boolean
+    appliesToServiceFee: boolean
+    appliesToSubscription: boolean
+    isActive: boolean
+  }>(
+    TAX_VAT_SETTING_SEEDS.map((rule) => [rule.country, { ...rule, isActive: true }]),
+  )
+  const taxRules = COUNTRIES.map((country) => configuredTaxRules.get(country.name) ?? {
+    code: `TAX_${country.code}_DEFAULT`,
+    country: country.name,
+    stateRegion: null,
+    taxName: 'Tax / VAT',
+    taxRate: 0,
+    taxType: TaxType.VAT,
+    applicationMode: TaxApplicationMode.EXCLUSIVE,
+    appliesToBuyer: true,
+    appliesToSupplier: false,
+    appliesToServiceFee: true,
+    appliesToSubscription: true,
+    isActive: false,
+  })
+
+  for (const taxRule of taxRules) {
     await prisma.taxVatSetting.upsert({
       where: { code: taxRule.code },
-      create: taxRule,
-      update: taxRule,
+      create: {
+        ...taxRule,
+        isActive: 'isActive' in taxRule ? taxRule.isActive !== false : true,
+      },
+      update: {
+        ...taxRule,
+        isActive: 'isActive' in taxRule ? taxRule.isActive !== false : true,
+      },
     })
   }
 
@@ -357,6 +391,9 @@ async function main() {
 
   // ── Admin user ─────────────────────────────────────────────
   const adminAccount = DEMO_ACCOUNT_BY_ROLE.SUPER_ADMIN
+  if (!adminAccount) {
+    throw new Error('Super admin seed account configuration is missing.')
+  }
   const adminPwd = await hashPassword(adminAccount.password)
   const adminUser = await prisma.user.upsert({
     where: { email: adminAccount.email },
@@ -388,37 +425,40 @@ async function main() {
 
   // ── Buyer user ─────────────────────────────────────────────
   const buyerAccount = DEMO_ACCOUNT_BY_ROLE.BUYER
-  const buyerPwd = await hashPassword(buyerAccount.password)
-  const buyerUser = await prisma.user.upsert({
-    where: { email: buyerAccount.email },
-    create: {
-      email: buyerAccount.email,
-      password: buyerPwd,
-      firstName: buyerAccount.firstName,
-      lastName: buyerAccount.lastName,
-      status: 'ACTIVE',
-      emailVerified: new Date(),
-    },
-    update: {
-      password: buyerPwd,
-      firstName: buyerAccount.firstName,
-      lastName: buyerAccount.lastName,
-      status: 'ACTIVE',
-      emailVerified: new Date(),
-    },
-  })
-  const buyerRole = await prisma.role.findUnique({ where: { name: 'BUYER' } })
-  await prisma.userRole.upsert({
-    where: { userId_roleId: { userId: buyerUser.id, roleId: buyerRole!.id } },
-    create: { userId: buyerUser.id, roleId: buyerRole!.id },
-    update: {},
-  })
-  await prisma.notificationPreference.upsert({
-    where: { userId: buyerUser.id }, create: { userId: buyerUser.id }, update: {},
-  })
+  if (buyerAccount) {
+    const buyerPwd = await hashPassword(buyerAccount.password)
+    const buyerUser = await prisma.user.upsert({
+      where: { email: buyerAccount.email },
+      create: {
+        email: buyerAccount.email,
+        password: buyerPwd,
+        firstName: buyerAccount.firstName,
+        lastName: buyerAccount.lastName,
+        status: 'ACTIVE',
+        emailVerified: new Date(),
+      },
+      update: {
+        password: buyerPwd,
+        firstName: buyerAccount.firstName,
+        lastName: buyerAccount.lastName,
+        status: 'ACTIVE',
+        emailVerified: new Date(),
+      },
+    })
+    const buyerRole = await prisma.role.findUnique({ where: { name: 'BUYER' } })
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: buyerUser.id, roleId: buyerRole!.id } },
+      create: { userId: buyerUser.id, roleId: buyerRole!.id },
+      update: {},
+    })
+    await prisma.notificationPreference.upsert({
+      where: { userId: buyerUser.id }, create: { userId: buyerUser.id }, update: {},
+    })
+  }
 
   // ── Supplier + Kaniz Fashion company ──────────────────────
   const supplierAccount = DEMO_ACCOUNT_BY_ROLE.SUPPLIER_OWNER
+  if (supplierAccount) {
   const supplierPwd = await hashPassword(supplierAccount.password)
   const supplierUser = await prisma.user.upsert({
     where: { email: supplierAccount.email },
@@ -548,6 +588,8 @@ async function main() {
   console.log('✅ Kaniz Fashion company and product created')
 
   // ── System Settings ────────────────────────────────────────
+  }
+
   const settings = [
     { key: 'site_name',        value: 'Kaniz Global Trade',                  group: 'GENERAL', label: 'Site Name' },
     { key: 'site_description', value: 'Global B2B Export Import Marketplace', group: 'GENERAL', label: 'Site Description' },
@@ -597,9 +639,11 @@ async function main() {
 
   console.log('\n🎉 Database seeded successfully!')
   console.log('────────────────────────────────')
-  for (const account of DEMO_ACCOUNTS) {
-    console.log(`${account.role}: ${account.email} / ${account.password}`)
+  console.log('Seeded accounts:')
+  for (const account of SEEDED_ACCOUNTS) {
+    console.log(`${account.role}: ${account.email}`)
   }
+  console.log('Passwords were sourced from environment variables or generated locally for non-production seeding.')
   console.log('────────────────────────────────')
 }
 

@@ -1,6 +1,6 @@
 import prisma from '@/lib/db/prisma'
 import { ApiError } from '@/lib/permissions'
-import { FeeCalculationService } from '@/lib/finance/service-fees'
+import { calculateTradeOrderFinancialBreakdown, FeeCalculationService } from '@/lib/finance/service-fees'
 
 interface CreateTradeOrderInput {
   quotationId: string
@@ -47,7 +47,13 @@ export async function createTradeOrderFromQuotation(input: CreateTradeOrderInput
   const transactionFeeResult = await feeService.calculateFee('TRANSACTION_SERVICE_FEE', subtotal)
   const escrowFee = escrowFeeResult.feeAmount
   const platformCommissionAmount = transactionFeeResult.feeAmount
-  const totalAmount = subtotal + shippingCost + escrowFee
+  const breakdown = calculateTradeOrderFinancialBreakdown({
+    subtotal,
+    shippingCost,
+    escrowFee,
+    platformCommissionAmount,
+  })
+  const totalAmount = breakdown.buyerEscrowFundingTotal
 
   return prisma.$transaction(async (tx) => {
     const order = await tx.tradeOrder.create({
@@ -136,8 +142,8 @@ export async function createTradeOrderFromQuotation(input: CreateTradeOrderInput
         type: 'FUNDING',
         amount: totalAmount,
         feeAmount: escrowFeeResult.feeAmount,
-        supplierPayable: subtotal - transactionFeeResult.feeAmount,
-        platformProfit: escrowFeeResult.feeAmount + transactionFeeResult.feeAmount,
+        supplierPayable: breakdown.supplierNetReceivable,
+        platformProfit: breakdown.platformRetainedTotal,
         currency: quotation.currencyCode,
         status: 'PENDING',
         snapshotId: escrowSnapshot.id,

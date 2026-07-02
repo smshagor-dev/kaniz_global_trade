@@ -156,13 +156,12 @@ npm run socket:dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
-### Default Credentials
+### Seeded Access
 
-| Role     | Email                              | Password        |
-|----------|------------------------------------|-----------------|
-| Admin    | admin@kanizglobaltrade.com         | Admin@123456    |
-| Supplier | supplier@kanizglobaltrade.com      | Supplier@123456 |
-| Buyer    | buyer@kanizglobaltrade.com         | Buyer@123456    |
+- Production seeding requires `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD`.
+- Demo supplier and buyer accounts are disabled by default and only seed when `ENABLE_DEMO_ACCOUNTS=true` in non-production environments.
+- Demo login autofill is hidden unless `NEXT_PUBLIC_ENABLE_DEMO_LOGIN=true` and matching demo credentials are configured.
+- See [SECURITY_SETUP.md](SECURITY_SETUP.md) for secret rotation and production setup guidance.
 
 ---
 
@@ -171,30 +170,32 @@ Open [http://localhost:3000](http://localhost:3000)
 See [.env.example](.env.example) for all variables. Key ones:
 
 ```env
-DATABASE_URL="mysql://user:pass@localhost:3306/kaniz_global_trade"
-REDIS_URL="redis://localhost:6379"
-JWT_ACCESS_SECRET="your-secret"
-JWT_REFRESH_SECRET="your-refresh-secret"
+DATABASE_URL="mysql://app_user:change_me@127.0.0.1:3306/kaniz_global_trade"
+REDIS_URL="redis://127.0.0.1:6379"
+JWT_ACCESS_SECRET="replace-with-a-64-plus-character-random-secret"
+JWT_REFRESH_SECRET="replace-with-a-different-64-plus-character-random-secret"
+SEED_SUPER_ADMIN_EMAIL="admin@example.com"
+SEED_SUPER_ADMIN_PASSWORD="replace-with-a-strong-admin-password"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 SOCKET_URL="http://localhost:3001"
-S3_ACCESS_KEY="..."
-S3_SECRET_KEY="..."
-STRIPE_SECRET_KEY="sk_..."
-STRIPE_WEBHOOK_SECRET="whsec_..."
-SSLCOMMERZ_STORE_ID="your_store_id"
-SSLCOMMERZ_STORE_PASSWORD="your_store_password"
+S3_ACCESS_KEY="replace-with-your-storage-access-key"
+S3_SECRET_KEY="replace-with-your-storage-secret-key"
+STRIPE_SECRET_KEY=""
+STRIPE_WEBHOOK_SECRET=""
+SSLCOMMERZ_STORE_ID=""
+SSLCOMMERZ_STORE_PASSWORD=""
 SSLCOMMERZ_SANDBOX_MODE="true"
-AAMARPAY_STORE_ID="your_aamarpay_store_id"
-AAMARPAY_SIGNATURE_KEY="your_aamarpay_signature_key"
+AAMARPAY_STORE_ID=""
+AAMARPAY_SIGNATURE_KEY=""
 AAMARPAY_SANDBOX_MODE="true"
-NOWPAYMENTS_API_KEY="your_nowpayments_api_key"
-NOWPAYMENTS_IPN_SECRET="your_nowpayments_ipn_secret"
+NOWPAYMENTS_API_KEY=""
+NOWPAYMENTS_IPN_SECRET=""
 NOWPAYMENTS_SANDBOX_MODE="true"
-MEILISEARCH_HOST="http://localhost:7700"
-MEILISEARCH_API_KEY="masterKey"
-SMTP_HOST="smtp.gmail.com"
-SMTP_USER="..."
-SMTP_PASS="..."
+MEILISEARCH_HOST="http://127.0.0.1:7700"
+MEILISEARCH_API_KEY="replace-with-your-meilisearch-master-key"
+SMTP_HOST="smtp.example.com"
+SMTP_USER="mailer@example.com"
+SMTP_PASS=""
 ```
 
 Payment notes:

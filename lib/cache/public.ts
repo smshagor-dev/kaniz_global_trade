@@ -1,3 +1,4 @@
+import 'server-only'
 import { deleteCachePattern, getCache, setCache } from '@/lib/db/redis'
 import {
   PUBLIC_CACHE_PATTERNS,

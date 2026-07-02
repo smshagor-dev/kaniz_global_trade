@@ -18,9 +18,10 @@ import type {
   MarketplaceFeedProduct,
   MarketplaceFeedResult,
   MarketplaceSort,
-} from '@/lib/home-marketplace-feed'
-import { HOME_MARKETPLACE_FOOTER_REVEAL_COUNT } from '@/lib/home-marketplace-feed'
+} from '@/lib/home-marketplace-feed.shared'
+import { HOME_MARKETPLACE_FOOTER_REVEAL_COUNT } from '@/lib/home-marketplace-feed.shared'
 import { CurrencyRange } from '@/components/currency/currency-range'
+import { TrustBadge } from '@/components/public/trust-badge'
 
 const FOOTER_EVENT = 'kgt:home-footer-visible'
 const SORT_OPTIONS: Array<{ value: MarketplaceSort; label: string }> = [
@@ -542,7 +543,11 @@ function FeedProductCard({
         >
           <Heart className={`h-4 w-4 ${favorite ? 'fill-current' : ''}`} />
         </button>
-        {verified ? (
+        {product.company.fraudPublicFlag ? (
+          <div className="absolute left-3 top-3">
+            <TrustBadge flag={product.company.fraudPublicFlag as 'VERIFIED' | 'UNDER_REVIEW' | 'LIMITED_ACCESS' | 'HIGH_RISK' | 'BLOCKED'} />
+          </div>
+        ) : verified ? (
           <div className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-white">
             <CheckCircle2 className="h-3 w-3" />
             Verified

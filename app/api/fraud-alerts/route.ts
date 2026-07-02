@@ -4,6 +4,8 @@ import prisma from '@/lib/db/prisma'
 import { requireAuth, requireAdmin, ApiError } from '@/lib/permissions'
 import { getPaginationParams, handleApiError, paginationMeta, successResponse } from '@/lib/utils/api'
 import { refreshCompanyCreditProfile, refreshUserCreditProfile } from '@/lib/trust/credit-score'
+import { FraudEventType } from '@prisma/client'
+import { screenFraudEvent } from '@/lib/fraud/service'
 
 const createSchema = z.object({
   targetUserId: z.string().optional(),
@@ -72,6 +74,24 @@ export async function POST(req: NextRequest) {
 
     if (data.targetCompanyId) await refreshCompanyCreditProfile(data.targetCompanyId)
     if (data.targetUserId) await refreshUserCreditProfile(data.targetUserId)
+
+    await screenFraudEvent({
+      req,
+      actorUserId: authUser.userId,
+      userId: data.targetUserId || authUser.userId,
+      companyId: data.targetCompanyId,
+      eventType: FraudEventType.REPORT_ACTIVITY,
+      sourceModule: 'fraud-alerts',
+      title: 'Fraud report submitted',
+      summary: data.reason,
+      payload: {
+        reason: data.reason,
+        description: data.description,
+        evidenceUrls: data.evidenceUrls,
+        tradeOrderId: data.tradeOrderId,
+        sampleOrderId: data.sampleOrderId,
+      },
+    })
 
     return successResponse(alert, 'Fraud alert submitted', undefined, 201)
   } catch (error) {

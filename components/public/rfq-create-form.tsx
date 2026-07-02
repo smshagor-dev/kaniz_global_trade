@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { post } from '@/lib/utils/api-client'
 import { LoadingButton } from '@/components/ui/loading-button'
 import { useCurrentUser, useIsAdmin, useIsAuthenticated, useIsBuyer } from '@/store/auth'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 
 type Option = {
   id: string
@@ -121,12 +122,18 @@ export function RFQCreateForm({
           <input value={form.unit} onChange={(event) => update('unit', event.target.value)} className={inputCls} />
         </Field>
         <Field label="Destination country">
-          <select value={form.destinationCountryId} onChange={(event) => update('destinationCountryId', event.target.value)} className={inputCls}>
-            <option value="">Select destination country</option>
-            {countries.map((country) => (
-              <option key={country.id} value={country.id}>{country.name}</option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={form.destinationCountryId}
+            onChange={(value) => update('destinationCountryId', value)}
+            options={countries.map((country) => ({
+              value: country.id,
+              label: country.name,
+              searchText: country.code || '',
+            }))}
+            placeholder="Select destination country"
+            searchPlaceholder="Search country..."
+            emptyMessage="No country found."
+          />
         </Field>
         <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_160px]">
           <Field label="Budget">

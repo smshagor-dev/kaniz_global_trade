@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { getAuthUser, requireCompanyAccess, isAdmin, isBuyer, ApiError } from '@/lib/permissions'
+import { getAuthUser, requireCompanyAccess, isAdmin, isBuyer, ApiError, assertComplianceAccess } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { refreshCompanyCreditProfile } from '@/lib/trust/credit-score'
 import { createNotification } from '@/server/services/notification'
@@ -139,6 +139,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const adminMode = isAdmin(authUser)
     if (!adminMode) {
       await requireCompanyAccess(req, id)
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'SUPPLIER',
+        companyId: id,
+      })
     }
 
     const data = schema.parse(await req.json())
@@ -193,6 +198,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const adminMode = isAdmin(authUser)
     if (!adminMode) {
       await requireCompanyAccess(req, companyId)
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'SUPPLIER',
+        companyId,
+      })
     }
 
     const data = updateSchema.parse(await req.json())
@@ -270,6 +280,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     if (!isAdmin(authUser)) {
       await requireCompanyAccess(req, companyId)
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'SUPPLIER',
+        companyId,
+      })
     }
 
     const { id } = deleteSchema.parse(await req.json())

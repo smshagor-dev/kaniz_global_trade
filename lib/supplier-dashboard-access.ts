@@ -19,7 +19,7 @@ type CompanyStaffPermissionsPayload = {
 export const supplierDashboardSections: SupplierDashboardSection[] = [
   { key: 'overview', label: 'Overview', href: '/dashboard/overview' },
   { key: 'company', label: 'Company Profile', href: '/dashboard/company' },
-  { key: 'company-verification', label: 'Company Verification', href: '/dashboard/company-verification' },
+  { key: 'b2b-company', label: 'Supplier Company', href: '/dashboard/b2b/company' },
   { key: 'categories', label: 'Categories', href: '/dashboard/categories' },
   { key: 'products', label: 'Products', href: '/dashboard/products' },
   { key: 'inquiries', label: 'Inquiries', href: '/dashboard/inquiries' },

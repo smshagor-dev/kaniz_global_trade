@@ -1,11 +1,15 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
-import { CheckCircle, MapPin, Globe, Phone, Mail, Star, Package, Users, ArrowRight, Clapperboard } from 'lucide-react'
+import { CheckCircle, MapPin, Globe, Phone, Mail, Star, Package, ArrowRight, Clapperboard } from 'lucide-react'
 import { InquiryForm } from '@/components/public/products/inquiry-form'
 import type { Metadata } from 'next'
 import { UserHistoryTracker } from '@/components/history/user-history-tracker'
 import { VideoPlayer } from '@/components/media/video-player'
+import { RatingSummaryLabel } from '@/components/public/rating-summary'
+import { TrustBadge } from '@/components/public/trust-badge'
+import { trackCompanyProfileView } from '@/lib/analytics/tracking'
+import { getCompanyRatingSummary, getRecentCompanyRatings } from '@/lib/ratings/public'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -41,35 +45,27 @@ export default async function CompanyDetailPage({ params }: Props) {
       markets: { include: { country: { select: { name: true, flag: true } } }, take: 10 },
       verification: true,
       subscription: { include: { plan: true } },
-      _count: { select: { products: { where: { status: 'APPROVED' } }, reviews: true } },
+      _count: { select: { products: { where: { status: 'APPROVED' } } } },
     },
   })
 
   if (!company) notFound()
 
-  const featuredProducts = await prisma.product.findMany({
-    where: { companyId: company.id, status: 'APPROVED', deletedAt: null },
-    take: 8,
-    orderBy: [{ isFeatured: 'desc' }, { totalViews: 'desc' }],
-    include: {
-      images: { where: { isPrimary: true }, take: 1 },
-      category: { select: { name: true } },
-    },
-  })
+  const [featuredProducts, ratingSummary, reviews] = await Promise.all([
+    prisma.product.findMany({
+      where: { companyId: company.id, status: 'APPROVED', deletedAt: null },
+      take: 8,
+      orderBy: [{ isFeatured: 'desc' }, { totalViews: 'desc' }],
+      include: {
+        images: { where: { isPrimary: true }, take: 1 },
+        category: { select: { name: true } },
+      },
+    }),
+    getCompanyRatingSummary(company.id),
+    getRecentCompanyRatings(company.id),
+  ])
 
-  const reviews = await prisma.review.findMany({
-    where: { companyId: company.id, isPublished: true },
-    take: 5,
-    orderBy: { createdAt: 'desc' },
-    include: { user: { select: { firstName: true, lastName: true, avatar: true } } },
-  })
-
-  const avgRating = reviews.length
-    ? Math.round((reviews.reduce((a, r) => a + r.rating, 0) / reviews.length) * 10) / 10
-    : 0
-
-  // Track view
-  prisma.company.update({ where: { id: company.id }, data: { totalViews: { increment: 1 } } }).catch(() => {})
+  trackCompanyProfileView(company.id).catch(() => {})
 
   return (
     <div className="w-full px-4 py-8 md:px-6 lg:px-8 2xl:px-10">
@@ -87,7 +83,6 @@ export default async function CompanyDetailPage({ params }: Props) {
           },
         }}
       />
-      {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <Link href="/" className="hover:text-blue-700">Home</Link>
         <span>/</span>
@@ -96,7 +91,6 @@ export default async function CompanyDetailPage({ params }: Props) {
         <span className="text-gray-900">{company.name}</span>
       </nav>
 
-      {/* Company header */}
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden mb-6">
         {company.banner && (
           <div className="h-40 bg-gradient-to-r from-blue-600 to-indigo-700 overflow-hidden">
@@ -119,6 +113,7 @@ export default async function CompanyDetailPage({ params }: Props) {
                     <CheckCircle className="w-3 h-3" /> {company.verificationStatus.replace(/_/g, ' ')}
                   </span>
                 )}
+                <TrustBadge flag={company.fraudPublicFlag} />
                 {company.isPremium && (
                   <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Premium</span>
                 )}
@@ -132,9 +127,9 @@ export default async function CompanyDetailPage({ params }: Props) {
               <div className="flex flex-wrap gap-4 text-sm">
                 <div className="text-center"><p className="font-bold text-gray-900">{company._count.products}</p><p className="text-xs text-gray-500">Products</p></div>
                 <div className="text-center"><p className="font-bold text-gray-900">{company.totalInquiries}</p><p className="text-xs text-gray-500">Inquiries</p></div>
-                <div className="text-center"><p className="font-bold text-gray-900">{company._count.reviews}</p><p className="text-xs text-gray-500">Reviews</p></div>
-                {avgRating > 0 && <div className="text-center"><p className="font-bold text-gray-900">⭐ {avgRating}</p><p className="text-xs text-gray-500">Avg Rating</p></div>}
+                <div className="text-center"><p className="font-bold text-gray-900">{ratingSummary.count}</p><p className="text-xs text-gray-500">Ratings</p></div>
               </div>
+              <RatingSummaryLabel summary={ratingSummary} noun="people" className="mt-3" />
             </div>
             {company.creditProfile && (
               <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-center">
@@ -154,9 +149,7 @@ export default async function CompanyDetailPage({ params }: Props) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column */}
         <div className="lg:col-span-2 space-y-6">
-          {/* About */}
           {company.description && (
             <div className="bg-white border border-gray-100 rounded-xl p-6">
               <h2 className="font-bold text-gray-900 mb-3">About the Company</h2>
@@ -260,7 +253,6 @@ export default async function CompanyDetailPage({ params }: Props) {
             </div>
           )}
 
-          {/* Products */}
           {featuredProducts.length > 0 && (
             <div className="bg-white border border-gray-100 rounded-xl p-6">
               <div className="flex items-center justify-between mb-4">
@@ -286,32 +278,28 @@ export default async function CompanyDetailPage({ params }: Props) {
             </div>
           )}
 
-          {/* Reviews */}
           {reviews.length > 0 && (
             <div className="bg-white border border-gray-100 rounded-xl p-6">
               <div className="flex items-center gap-3 mb-4">
                 <h2 className="font-bold text-gray-900">Reviews</h2>
-                <div className="flex items-center gap-1 text-sm">
-                  <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                  <span className="font-bold">{avgRating}</span>
-                  <span className="text-gray-400">({reviews.length})</span>
-                </div>
+                <RatingSummaryLabel summary={ratingSummary} noun="people" />
               </div>
               <div className="space-y-4">
                 {reviews.map((review) => (
                   <div key={review.id} className="border-b border-gray-50 pb-4 last:border-0">
                     <div className="flex items-center gap-2 mb-1">
                       <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-                        {review.user.firstName[0]}
+                        {review.authorUser.firstName[0]}
                       </div>
-                      <span className="text-sm font-medium">{review.user.firstName} {review.user.lastName}</span>
+                      <span className="text-sm font-medium">{review.authorUser.firstName} {review.authorUser.lastName}</span>
                       <div className="flex ml-auto">
                         {Array.from({ length: 5 }, (_, i) => (
                           <Star key={i} className={`w-3.5 h-3.5 ${i < review.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'}`} />
                         ))}
                       </div>
                     </div>
-                    {review.content && <p className="text-sm text-gray-600 ml-9">{review.content}</p>}
+                    {review.title ? <p className="ml-9 text-sm font-semibold text-gray-900">{review.title}</p> : null}
+                    {review.comment ? <p className="text-sm text-gray-600 ml-9">{review.comment}</p> : null}
                   </div>
                 ))}
               </div>
@@ -319,9 +307,7 @@ export default async function CompanyDetailPage({ params }: Props) {
           )}
         </div>
 
-        {/* Right column */}
         <div className="space-y-4">
-          {/* Contact */}
           <div className="bg-white border border-gray-100 rounded-xl p-5">
             <h3 className="font-bold text-gray-900 mb-4">Contact Supplier</h3>
             {company.phone && (
@@ -339,17 +325,16 @@ export default async function CompanyDetailPage({ params }: Props) {
             </div>
           </div>
 
-          {/* Company info */}
           <div className="bg-white border border-gray-100 rounded-xl p-5">
             <h3 className="font-bold text-gray-900 mb-3">Company Info</h3>
             <dl className="space-y-2 text-sm">
               {[
                 ['Business Type', company.businessType.replace(/_/g, ' ')],
-                ['Location',      `${company.country?.name}`],
-                ['Year Founded',  company.yearEstablished],
-                ['Employees',     company.employees],
+                ['Location', `${company.country?.name}`],
+                ['Year Founded', company.yearEstablished],
+                ['Employees', company.employees],
                 ['Annual Revenue', company.annualRevenue],
-                ['Export Share',  company.exportPercentage ? `${company.exportPercentage}%` : null],
+                ['Export Share', company.exportPercentage ? `${company.exportPercentage}%` : null],
               ].filter(([, v]) => v).map(([label, value]) => (
                 <div key={label as string} className="flex items-start justify-between gap-2">
                   <dt className="text-gray-500 flex-shrink-0">{label}</dt>
@@ -359,7 +344,6 @@ export default async function CompanyDetailPage({ params }: Props) {
             </dl>
           </div>
 
-          {/* Certificates */}
           {company.certificates.length > 0 && (
             <div className="bg-white border border-gray-100 rounded-xl p-5">
               <h3 className="font-bold text-gray-900 mb-3">Certifications</h3>
@@ -375,7 +359,6 @@ export default async function CompanyDetailPage({ params }: Props) {
             </div>
           )}
 
-          {/* Markets */}
           {company.markets.length > 0 && (
             <div className="bg-white border border-gray-100 rounded-xl p-5">
               <h3 className="font-bold text-gray-900 mb-3">Export Markets</h3>

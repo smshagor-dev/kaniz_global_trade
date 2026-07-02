@@ -11,6 +11,8 @@ export async function GET(
   try {
     const authUser = await requireAuth(req)
     const { id } = await params
+    const { searchParams } = new URL(req.url)
+    const forceRefresh = searchParams.get('refresh') === '1'
 
     const rfq = await prisma.rFQ.findUnique({
       where: { id },
@@ -22,10 +24,10 @@ export async function GET(
       throw new ApiError(403, 'Access denied')
     }
 
-    const data = await getSmartMatchesForRFQ(id)
+    const data = await getSmartMatchesForRFQ(id, { forceRefresh })
     if (!data) throw new ApiError(404, 'RFQ not found')
 
-    return successResponse(data, 'Smart matches generated')
+    return successResponse(data, forceRefresh ? 'Smart matches refreshed' : 'Smart matches generated')
   } catch (error) {
     return handleApiError(error)
   }

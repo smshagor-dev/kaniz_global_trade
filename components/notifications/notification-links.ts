@@ -50,7 +50,6 @@ export function resolveNotificationHref(notification: NotificationLinkInput, aud
   const manualPaymentRequestId = asString(data.manualPaymentRequestId)
 
   if (audience === 'admin') {
-    if (verificationId) return '/admin/buyer-verifications'
     if (companyId) return '/admin/companies'
     if (inspectionReportId) return '/admin/inspections'
     if (productId) return `/admin/products/${productId}/edit`
@@ -75,7 +74,6 @@ export function resolveNotificationHref(notification: NotificationLinkInput, aud
     if (logisticsBookingId) return '/buyer/logistics'
     if (insurancePolicyId) return '/buyer/insurance'
     if (insuranceClaimId) return '/buyer/claims'
-    if (verificationId) return '/buyer/verification'
     if (inspectionReportId || companyId) return '/buyer/inspections'
     return '/buyer/notifications'
   }

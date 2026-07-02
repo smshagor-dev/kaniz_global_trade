@@ -6,7 +6,8 @@ import { get, post } from '@/lib/utils/api-client'
 import { CurrencyAmount } from '@/components/currency/currency-amount'
 import { useCurrentUser } from '@/store/auth'
 import toast from 'react-hot-toast'
-import { AlertTriangle, FileText, Loader2, ShieldCheck, Wallet } from 'lucide-react'
+import { AlertTriangle, FileText, Loader2, ShieldCheck, Star, Upload, Wallet } from 'lucide-react'
+import { uploadAsset } from '@/lib/utils/upload'
 
 interface TradeOrder {
   id: string
@@ -31,7 +32,7 @@ interface TradeOrder {
     lastEvent?: string | null
   }>
   disputes: Array<{ id: string; status: string }>
-  ratings?: Array<{ id: string; authorUserId: string; createdAt: string }>
+  ratings?: Array<{ id: string; authorUserId: string; rating: number; createdAt: string }>
 }
 
 type OrderFilter =
@@ -50,6 +51,7 @@ export default function BuyerTradeOrdersPage() {
   const user = useCurrentUser()
   const [activeFilter, setActiveFilter] = useState<OrderFilter>('ALL')
   const [disputeReason, setDisputeReason] = useState<Record<string, string>>({})
+  const [evidenceUrls, setEvidenceUrls] = useState<Record<string, string[]>>({})
   const [rating, setRating] = useState<Record<string, number>>({})
   const [documentType, setDocumentType] = useState<Record<string, string>>({})
   const [actionLoading, setActionLoading] = useState<Record<string, string | null>>({})
@@ -130,7 +132,7 @@ export default function BuyerTradeOrdersPage() {
       await post(`/trade-orders/${orderId}/dispute`, {
         reason,
         description: reason,
-        evidenceUrls: [],
+        evidenceUrls: evidenceUrls[orderId] || [],
       })
       toast.success('Dispute opened')
     })
@@ -174,12 +176,38 @@ export default function BuyerTradeOrdersPage() {
     await runAction(orderId, 'fraud', async () => {
       await post('/fraud-alerts', {
         tradeOrderId: orderId,
+        targetCompanyId: orders.find((order) => order.id === orderId)?.supplierCompany.id,
         reason,
         description: reason,
-        evidenceUrls: [],
+        evidenceUrls: evidenceUrls[orderId] || [],
       })
       toast.success('Fraud alert submitted')
     })
+  }
+
+  async function uploadEvidence(orderId: string, fileList: FileList | null) {
+    if (!fileList?.length) return
+
+    setRowLoading(orderId, 'evidence')
+    try {
+      const uploadedUrls: string[] = []
+      for (const file of Array.from(fileList)) {
+        const uploaded = await uploadAsset(file, 'dispute_evidence')
+        uploadedUrls.push(uploaded.url)
+      }
+      setEvidenceUrls((current) => ({
+        ...current,
+        [orderId]: [...(current[orderId] || []), ...uploadedUrls],
+      }))
+      toast.success('Evidence uploaded')
+    } catch (error: unknown) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Unable to upload evidence'
+      toast.error(message)
+    } finally {
+      setRowLoading(orderId, null)
+    }
   }
 
   return (
@@ -302,13 +330,16 @@ export default function BuyerTradeOrdersPage() {
                           Base: <CurrencyAmount amount={order.subtotal} currencyCode={order.currencyCode} showCode />
                         </p>
                         <p className="mt-1 text-xs text-[#738076]">
-                          Platform fee: <CurrencyAmount amount={order.platformCommissionAmount} currencyCode={order.currencyCode} showCode />
+                          Supplier platform deduction: <CurrencyAmount amount={order.platformCommissionAmount} currencyCode={order.currencyCode} showCode />
                         </p>
                         <p className="mt-1 text-xs text-[#738076]">
-                          Escrow fee: <CurrencyAmount amount={order.escrowFee} currencyCode={order.currencyCode} showCode />
+                          Escrow protection fee: <CurrencyAmount amount={order.escrowFee} currencyCode={order.currencyCode} showCode />
                         </p>
                         <p className="mt-1 text-xs text-[#738076]">
                           Shipping: <CurrencyAmount amount={order.shippingCost} currencyCode={order.currencyCode} showCode />
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-[#1f2937]">
+                          You pay: <CurrencyAmount amount={order.totalAmount} currencyCode={order.currencyCode} showCode />
                         </p>
                       </td>
                       <td className="px-6 py-4">
@@ -420,6 +451,43 @@ export default function BuyerTradeOrdersPage() {
                             className={inputCls}
                             disabled={!canDispute || rowLoading === 'dispute' || rowLoading === 'fraud'}
                           />
+                          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#d9ddd4] px-3 py-2.5 text-sm font-semibold text-[#58635d] hover:border-[#c9d0c1]">
+                            {rowLoading === 'evidence' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                            {rowLoading === 'evidence' ? 'Uploading...' : 'Upload evidence'}
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+                              multiple
+                              className="hidden"
+                              onChange={(event) => {
+                                void uploadEvidence(order.id, event.target.files)
+                                event.target.value = ''
+                              }}
+                              disabled={!canDispute || !!rowLoading}
+                            />
+                          </label>
+                          {evidenceUrls[order.id]?.length ? (
+                            <div className="grid gap-2">
+                              {evidenceUrls[order.id].map((url) => (
+                                <a key={url} href={url} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-xl border border-[#d9ddd4] bg-white px-3 py-2 text-xs text-[#1f2937]">
+                                  <span className="truncate">{url.split('/').pop() || 'Evidence file'}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      setEvidenceUrls((current) => ({
+                                        ...current,
+                                        [order.id]: (current[order.id] || []).filter((item) => item !== url),
+                                      }))
+                                    }}
+                                    className="font-semibold text-[#b64242]"
+                                  >
+                                    Remove
+                                  </button>
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
                           <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
@@ -443,20 +511,24 @@ export default function BuyerTradeOrdersPage() {
                       <td className="px-6 py-4">
                         <div className="min-w-[180px] space-y-2">
                           {myRating ? (
-                            <p className="text-sm font-medium text-[#3e5840]">You already rated this supplier</p>
+                            <>
+                              <p className="text-sm font-medium text-[#3e5840]">You already rated this supplier</p>
+                              <div className="flex items-center gap-1">
+                                <StaticStars
+                                  value={order.ratings?.find((entry) => entry.authorUserId === user?.id)?.rating || 5}
+                                />
+                              </div>
+                            </>
                           ) : canRate ? (
                             <>
-                              <input
-                                type="number"
-                                min={1}
-                                max={5}
+                              <StarPicker
                                 value={rating[order.id] || 5}
-                                onChange={(event) =>
-                                  setRating((current) => ({ ...current, [order.id]: Number(event.target.value) }))
+                                onChange={(value) =>
+                                  setRating((current) => ({ ...current, [order.id]: value }))
                                 }
-                                className={inputCls}
                                 disabled={rowLoading === 'rating'}
                               />
+                              <p className="text-xs text-[#738076]">{rating[order.id] || 5} of 5 stars</p>
                               <button
                                 type="button"
                                 onClick={() => rate(order.id)}
@@ -533,4 +605,46 @@ function getEscrowStatusTone(status?: string) {
     default:
       return 'bg-[#eef1eb] text-[#5f6862]'
   }
+}
+
+function StarPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number
+  onChange: (value: number) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange(star)}
+          disabled={disabled}
+          className="rounded-full p-1 transition hover:bg-[#f3f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+        >
+          <Star
+            className={`h-5 w-5 ${star <= value ? 'fill-[#f4b740] text-[#f4b740]' : 'text-[#c8d0c1]'}`}
+          />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function StaticStars({ value }: { value: number }) {
+  return (
+    <>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Star
+          key={star}
+          className={`h-4 w-4 ${star <= value ? 'fill-[#f4b740] text-[#f4b740]' : 'text-[#c8d0c1]'}`}
+        />
+      ))}
+    </>
+  )
 }

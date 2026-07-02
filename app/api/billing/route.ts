@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, ApiError } from '@/lib/permissions'
+import { sanitizePaymentForViewer } from '@/lib/payment/safety'
 import { resolveStripeMode } from '@/lib/payment/mode'
 import { getSettingsMap } from '@/lib/settings/system'
 import { handleApiError, successResponse } from '@/lib/utils/api'
@@ -69,8 +70,8 @@ export async function GET(req: NextRequest) {
               },
             },
           },
-          tradeOrder: { select: { id: true, productName: true, status: true } },
-          sampleOrder: { select: { id: true, title: true, status: true } },
+          tradeOrder: { select: { id: true, productName: true, status: true, supplierCompanyId: true } },
+          sampleOrder: { select: { id: true, title: true, status: true, supplierCompanyId: true } },
         },
       }),
       prisma.manualPaymentRequest.findMany({
@@ -98,7 +99,7 @@ export async function GET(req: NextRequest) {
       subscription,
       plans,
       packageRequired: !hasPackageAccess(subscription),
-      payments,
+      payments: payments.map((payment) => sanitizePaymentForViewer(authUser, payment)),
       manualRequests,
       paymentMethods: [
         { key: 'STRIPE', label: 'Stripe', enabled: settings.STRIPE_ENABLED === 'true', mode: resolveStripeMode(settings.STRIPE_MODE, settings.STRIPE_SECRET_KEY) },

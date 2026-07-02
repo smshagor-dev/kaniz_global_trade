@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, ApiError } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
+import { mapStatusCounts } from '@/lib/dashboard/live-overview'
 
 function sanitizeProductionCopy(value: string) {
   return value
@@ -28,15 +29,21 @@ export async function GET(req: NextRequest) {
       tradeOrderSummary,
       sampleOrderSummary,
       shipmentSummary,
+      logisticsStatusSummary,
       adSummary,
       financingSummary,
       insuranceSummary,
+      claimStatusSummary,
       commissions,
       notifications,
       unreadNotifications,
       recentTradeOrders,
       recentSampleOrders,
       recentPayments,
+      recentShipments,
+      recentLogistics,
+      recentPolicies,
+      recentClaims,
     ] = await Promise.all([
       prisma.company.findUnique({
         where: { id: companyId },
@@ -105,6 +112,11 @@ export async function GET(req: NextRequest) {
         where: { supplierCompanyId: companyId },
         _count: true,
       }),
+      prisma.logisticsBooking.groupBy({
+        by: ['status'],
+        where: { companyId },
+        _count: true,
+      }),
       prisma.adCampaign.groupBy({
         by: ['status'],
         where: { companyId },
@@ -116,6 +128,11 @@ export async function GET(req: NextRequest) {
         _count: true,
       }),
       prisma.insurancePolicy.groupBy({
+        by: ['status'],
+        where: { companyId },
+        _count: true,
+      }),
+      prisma.insuranceClaim.groupBy({
         by: ['status'],
         where: { companyId },
         _count: true,
@@ -188,6 +205,70 @@ export async function GET(req: NextRequest) {
           sampleOrder: { select: { title: true } },
         },
       }),
+      prisma.shipment.findMany({
+        where: { supplierCompanyId: companyId },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        take: 5,
+        select: {
+          id: true,
+          carrier: true,
+          trackingNumber: true,
+          trackingUrl: true,
+          status: true,
+          lastEvent: true,
+          lastLocation: true,
+          estimatedDeliveryAt: true,
+          lastSyncedAt: true,
+          tradeOrder: { select: { productName: true } },
+          sampleOrder: { select: { title: true } },
+        },
+      }),
+      prisma.logisticsBooking.findMany({
+        where: { companyId },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          providerName: true,
+          serviceMode: true,
+          origin: true,
+          destination: true,
+          status: true,
+          trackingNumber: true,
+          estimatedDeliveryAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.insurancePolicy.findMany({
+        where: { companyId },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          providerName: true,
+          policyType: true,
+          status: true,
+          insuredAmount: true,
+          premiumAmount: true,
+          currencyCode: true,
+          endsAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.insuranceClaim.findMany({
+        where: { companyId },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          claimAmount: true,
+          currencyCode: true,
+          updatedAt: true,
+          policy: { select: { providerName: true, policyType: true } },
+        },
+      }),
     ])
 
     const totals = analytics.reduce(
@@ -238,6 +319,7 @@ export async function GET(req: NextRequest) {
     }
 
     return successResponse({
+      generatedAt: new Date().toISOString(),
       company,
       totals,
       acceptanceRate,
@@ -263,8 +345,12 @@ export async function GET(req: NextRequest) {
         ],
         inquiryStatus: inquirySummary.map((item) => ({ name: item.status, value: item._count })),
         quotationStatus: quotationStats.map((item) => ({ name: item.status, value: item._count })),
-        tradeOrders: tradeOrderSummary.map((item) => ({ name: item.status, value: item._count })),
-        samples: sampleOrderSummary.map((item) => ({ name: item.status, value: item._count })),
+        tradeOrders: mapStatusCounts(tradeOrderSummary),
+        samples: mapStatusCounts(sampleOrderSummary),
+        shipments: mapStatusCounts(shipmentSummary),
+        logistics: mapStatusCounts(logisticsStatusSummary),
+        insurance: mapStatusCounts(insuranceSummary),
+        claims: mapStatusCounts(claimStatusSummary),
       },
       topProducts,
       recent: {
@@ -285,6 +371,20 @@ export async function GET(req: NextRequest) {
           ...item,
           amount: Number(item.amount),
           label: item.invoice?.invoiceNumber || item.tradeOrder?.productName || item.sampleOrder?.title || 'Payment',
+        })),
+        shipments: recentShipments,
+        logistics: recentLogistics.map((item) => ({
+          ...item,
+          statusLabel: `${item.providerName} ${item.serviceMode}`,
+        })),
+        insurancePolicies: recentPolicies.map((item) => ({
+          ...item,
+          insuredAmount: Number(item.insuredAmount),
+          premiumAmount: Number(item.premiumAmount),
+        })),
+        claims: recentClaims.map((item) => ({
+          ...item,
+          claimAmount: Number(item.claimAmount),
         })),
       },
     })

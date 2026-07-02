@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
+import { requireAuth, ROLES, ApiError, assertComplianceAccess } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { openInsuranceClaim } from '@/lib/insurance/claims'
 import { createNotification } from '@/server/services/notification'
@@ -54,6 +54,12 @@ export async function POST(req: NextRequest) {
     if (!policy.buyerId) throw new ApiError(409, 'This insurance policy is not yet attached to a buyer')
     const buyerId = policy.buyerId
     if (policy.buyerId !== authUser.userId && !authUser.roles.includes(ROLES.SUPER_ADMIN)) throw new ApiError(403, 'Buyer access required')
+    if (!authUser.roles.includes(ROLES.SUPER_ADMIN)) {
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'BUYER',
+      })
+    }
     if (!['ACTIVE', 'CLAIM_OPEN'].includes(policy.status)) {
       throw new ApiError(409, 'Claims can only be opened for active insurance policies')
     }

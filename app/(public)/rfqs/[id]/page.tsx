@@ -7,6 +7,7 @@ import prisma from '@/lib/db/prisma'
 import { buildPublicActiveRFQWhere } from '@/lib/rfqs/visibility'
 import { CurrencyAmount } from '@/components/currency/currency-amount'
 import { RFQQuotationPanel } from '@/components/public/rfq-quotation-panel'
+import { TrustBadge } from '@/components/public/trust-badge'
 
 export const metadata: Metadata = {
   title: 'RFQ Detail',
@@ -42,6 +43,7 @@ export default async function PublicRFQDetailPage({
           id: true,
           firstName: true,
           lastName: true,
+          fraudPublicFlag: true,
         },
       },
       category: { select: { id: true, name: true } },
@@ -130,6 +132,9 @@ export default async function PublicRFQDetailPage({
 
             <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-bold text-slate-950">Buyer information</h2>
+              <div className="mt-3">
+                <TrustBadge flag={rfq.buyer.fraudPublicFlag} />
+              </div>
               <p className="mt-3 text-sm leading-6 text-slate-600">
                 Buyer contact: {rfq.buyer.firstName} {rfq.buyer.lastName ? `${rfq.buyer.lastName[0]}.` : ''}
               </p>

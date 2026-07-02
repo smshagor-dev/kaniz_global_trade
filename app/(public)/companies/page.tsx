@@ -12,6 +12,8 @@ import {
 import type { Metadata } from 'next'
 import { expandMarketplaceSearchQuery } from '@/lib/ai/google-marketplace-search'
 import { UserHistoryTracker } from '@/components/history/user-history-tracker'
+import { RatingSummaryLabel } from '@/components/public/rating-summary'
+import { getCompanyRatingSummaries } from '@/lib/ratings/public'
 
 export const metadata: Metadata = {
   title: 'Verified Suppliers',
@@ -62,7 +64,7 @@ async function getData(params: Record<string, string>) {
       orderBy: [{ isFeatured: 'desc' }, { isPremium: 'desc' }, { totalViews: 'desc' }],
       include: {
         country: { select: { name: true, code: true, flag: true } },
-        _count: { select: { products: { where: { status: 'APPROVED' } }, reviews: true } },
+        _count: { select: { products: { where: { status: 'APPROVED' } } } },
       },
     }),
     prisma.company.count({ where }),
@@ -74,8 +76,20 @@ async function getData(params: Record<string, string>) {
     }),
     ['MANUFACTURER', 'TRADING_COMPANY', 'BUYING_OFFICE', 'AGENT', 'DISTRIBUTOR'],
   ])
+  const companyRatingMap = await getCompanyRatingSummaries(companies.map((company) => company.id))
 
-  return { companies, total, countries, businessTypes, page, limit, expanded }
+  return {
+    companies: companies.map((company) => ({
+      ...company,
+      ratingSummary: companyRatingMap.get(company.id) || { average: 0, count: 0 },
+    })),
+    total,
+    countries,
+    businessTypes,
+    page,
+    limit,
+    expanded,
+  }
 }
 
 function buildFilterHref(
@@ -348,8 +362,10 @@ export default async function CompaniesPage({ searchParams }: Props) {
                             <p className="mt-1 text-sm font-semibold text-[#1f2937]">{company.totalInquiries}</p>
                           </div>
                           <div className="rounded-2xl bg-[#f6f7f3] px-4 py-3">
-                            <p className="text-xs uppercase tracking-[0.14em] text-[#7b857c]">Reviews</p>
-                            <p className="mt-1 text-sm font-semibold text-[#1f2937]">{company._count.reviews}</p>
+                            <p className="text-xs uppercase tracking-[0.14em] text-[#7b857c]">Rating</p>
+                            <div className="mt-1">
+                              <RatingSummaryLabel summary={company.ratingSummary} noun="people" className="text-xs" />
+                            </div>
                           </div>
                         </div>
                       </div>

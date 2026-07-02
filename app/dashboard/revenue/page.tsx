@@ -49,7 +49,7 @@ export default function SupplierRevenuePage() {
         {[
           { label: 'Gross orders', value: summary.gross },
           { label: 'Platform deduction', value: summary.platform },
-          { label: 'Escrow fees', value: summary.escrow },
+          { label: 'Buyer-paid escrow fees', value: summary.escrow },
           { label: 'Net receivable', value: summary.net },
         ].map((item) => (
           <div key={item.label} className="rounded-[24px] border border-[#d9ddd4] bg-white p-5 shadow-sm">
@@ -75,7 +75,7 @@ export default function SupplierRevenuePage() {
                   <th className="px-6 py-4">Order</th>
                   <th className="px-6 py-4">Gross order amount</th>
                   <th className="px-6 py-4">Platform deduction</th>
-                  <th className="px-6 py-4">Escrow fee</th>
+                  <th className="px-6 py-4">Buyer-paid escrow fee</th>
                   <th className="px-6 py-4">Net receivable</th>
                 </tr>
               </thead>

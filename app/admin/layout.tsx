@@ -11,7 +11,7 @@ import { NotificationDropdown } from '@/components/notifications/notification-dr
 import toast from 'react-hot-toast'
 import {
   LayoutDashboard, Building2, Package, Globe, Shield,
-  Flag, LogOut, Globe2, ChevronRight, ChevronDown, CheckSquare, ClipboardCheck, BadgeCheck, Settings, KeyRound, Bell,
+  Flag, LogOut, Globe2, ChevronRight, ChevronDown, CheckSquare, ClipboardCheck, BadgeCheck, Settings, KeyRound, Bell, Users,
 } from 'lucide-react'
 
 type NavItem = {
@@ -32,10 +32,11 @@ const navGroups = [
   {
     label: 'Access',
     items: [
-      { href: '/admin/buyer-verifications', icon: Shield,      label: 'Buyer Verification' },
-      { href: '/admin/company-verification-documents', icon: ClipboardCheck, label: 'Company Verification Docs' },
+      { href: '/admin/users',               icon: Users,       label: 'Users' },
+      { href: '/admin/b2b/buyer-verifications', icon: Building2, label: 'Buyer Company Verification' },
+      { href: '/admin/b2b/supplier-verifications', icon: Building2, label: 'Supplier Company Verification' },
       { href: '/admin/kyc',                 icon: BadgeCheck,  label: 'KYC Reviews' },
-      { href: '/admin/fraud-alerts',        icon: Flag,        label: 'Fraud Alerts' },
+      { href: '/admin/fraud-alerts',        icon: Flag,        label: 'Fraud Center' },
       { href: '/admin/roles',               icon: KeyRound,    label: 'Roles & Permissions' },
     ],
   },
@@ -76,7 +77,7 @@ const navGroups = [
         children: [
           { href: '/admin/settings/service-fees', label: 'Service Fees' },
           { href: '/admin/settings/tax-vat', label: 'Tax & VAT' },
-          { href: '/admin/settings/ai', label: 'AI Search' },
+          { href: '/admin/settings/ai', label: 'AI Studio' },
           { href: '/admin/settings/home', label: 'Home Page' },
           { href: '/admin/settings/payment', label: 'Payment' },
           { href: '/admin/settings/currency', label: 'Currency' },

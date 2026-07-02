@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Check, ExternalLink, FileText, Link2, Loader2, Package, Plus, RefreshCw, Save, Trash2, Upload, Video } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, ExternalLink, FileText, Link2, Loader2, Package, Plus, RefreshCw, Save, Trash2, Upload, Video } from 'lucide-react'
 import api, { get, post, put } from '@/lib/utils/api-client'
 import { LoadingButton } from '@/components/ui/loading-button'
 import { CKEditorField } from '@/components/ui/ckeditor-field'
@@ -53,6 +53,10 @@ type ProductEditorProps = {
 type CategoryOption = { id: string; name: string }
 type CompanyOption = { id: string; name: string }
 type SupplierCompany = { id: string; name: string } | null
+type B2BCompanyStatus = {
+  hasCompany: boolean
+  isApprovedSupplier: boolean
+}
 type UploadAssetResult = { url: string; thumbnailUrl?: string | null }
 type ProductDetails = {
   id: string
@@ -84,9 +88,11 @@ type ProductDetails = {
   videos: Array<{ url: string; title?: string | null; thumbnailUrl?: string | null }>
   documents: Array<{ name: string; url: string; type?: string | null }>
   specifications: Array<{ key: string; value: string; unit?: string | null }>
+  priceTiers: Array<{ minQty: number; maxQty?: number | null; priceMin: number; priceMax?: number | null }>
 }
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent'
+const DEFAULT_MOQ_UNITS = ['Pieces', 'Kg', 'Gram', 'Ton', 'Sets', 'Boxes', 'Cartons', 'Pairs', 'Meters', 'Liters'] as const
 
 function slugToken(value: string) {
   return value
@@ -115,6 +121,9 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
   const [videos, setVideos] = useState<Array<{ url: string; title: string; thumbnailUrl: string }>>([])
   const [documents, setDocuments] = useState<Array<{ name: string; url: string; type: string }>>([])
   const [specs, setSpecs] = useState<Array<{ key: string; value: string; unit: string }>>([])
+  const [priceTiers, setPriceTiers] = useState<Array<{ minQty: string; maxQty: string; priceMin: string; priceMax: string }>>([
+    { minQty: '', maxQty: '', priceMin: '', priceMax: '' },
+  ])
   const [uploadingImages, setUploadingImages] = useState(false)
   const [uploadingVideos, setUploadingVideos] = useState(false)
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false)
@@ -122,6 +131,8 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
   const [uploadingPdf, setUploadingPdf] = useState(false)
   const [uploadingSeoImage, setUploadingSeoImage] = useState(false)
   const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [customMoqUnit, setCustomMoqUnit] = useState('')
+  const [moqUnitOptions, setMoqUnitOptions] = useState<string[]>([...DEFAULT_MOQ_UNITS])
 
   const { data: adminCompaniesData } = useQuery({
     queryKey: ['admin-companies-selector'],
@@ -146,6 +157,15 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
   const supplierCompany = !isAdminPortal
     ? ((supplierCompanyData?.data as unknown as SupplierCompany) || null)
     : null
+
+  const { data: b2bStatusData } = useQuery({
+    queryKey: ['supplier-b2b-company-status'],
+    queryFn: () => get<B2BCompanyStatus>('/b2b/company/status'),
+    enabled: !isAdminPortal && mode === 'create',
+  })
+
+  const supplierB2BStatus = (b2bStatusData?.data as B2BCompanyStatus | undefined) || undefined
+  const wholesaleCreationBlocked = !isAdminPortal && mode === 'create' && !supplierB2BStatus?.isApprovedSupplier
 
   const { data: categoriesData } = useQuery({
     queryKey: ['categories', portal],
@@ -203,6 +223,7 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
   const watchedBarcode = watch('barcode') || ''
   const watchedThumbnailUrl = watch('thumbnailUrl') || ''
   const watchedSeoImageUrl = watch('seoImageUrl') || ''
+  const watchedMoqUnit = watch('moqUnit') || ''
 
   const { data: subcategoriesData } = useQuery({
     queryKey: ['subcategories', selectedCategoryId],
@@ -262,6 +283,21 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
         type: document.type || '',
       }))
     )
+    setPriceTiers(
+      product.priceTiers.length
+        ? product.priceTiers.map((tier) => ({
+            minQty: String(tier.minQty),
+            maxQty: tier.maxQty != null ? String(tier.maxQty) : '',
+            priceMin: String(tier.priceMin),
+            priceMax: tier.priceMax != null ? String(tier.priceMax) : '',
+          }))
+        : [{
+            minQty: product.moq?.toString() || '',
+            maxQty: '',
+            priceMin: product.priceMin?.toString() || '',
+            priceMax: product.priceMax?.toString() || '',
+          }]
+    )
     setSpecs(
       product.specifications.map((specification) => ({
         key: specification.key,
@@ -270,6 +306,16 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
       }))
     )
   }, [productData?.data, reset])
+
+  useEffect(() => {
+    if (!watchedMoqUnit.trim()) return
+
+    setMoqUnitOptions((previous) => (
+      previous.includes(watchedMoqUnit.trim())
+        ? previous
+        : [...previous, watchedMoqUnit.trim()]
+    ))
+  }, [watchedMoqUnit])
 
   useEffect(() => {
     if (mode !== 'create' || !watchedName.trim()) return
@@ -400,14 +446,19 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
   }
 
   async function handlePdfUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
+    const files = event.target.files
+    if (!files?.length) return
 
     setUploadingPdf(true)
     try {
-      const uploaded = await uploadSingleFile(file, 'product_doc')
-      setDocuments([{ name: file.name, url: uploaded.url, type: 'PDF_SPECIFICATION' }])
-      toast.success('PDF specification uploaded')
+      for (const file of Array.from(files)) {
+        const uploaded = await uploadSingleFile(file, 'product_doc')
+        setDocuments((current) => [
+          ...current,
+          { name: file.name, url: uploaded.url, type: 'PDF_CATALOG' },
+        ])
+      }
+      toast.success('Catalog PDF uploaded')
     } catch {
       toast.error('PDF upload failed')
     } finally {
@@ -453,6 +504,22 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
     setYoutubeUrl('')
   }
 
+  function handleAddMoqUnit() {
+    const normalizedUnit = customMoqUnit.trim()
+    if (!normalizedUnit) {
+      toast.error('Enter a MOQ unit first')
+      return
+    }
+
+    setMoqUnitOptions((previous) => (
+      previous.includes(normalizedUnit)
+        ? previous
+        : [...previous, normalizedUnit]
+    ))
+    setValue('moqUnit', normalizedUnit, { shouldDirty: true })
+    setCustomMoqUnit('')
+  }
+
   async function onSubmit(values: ProductFormValues) {
     const companyId = isAdminPortal ? values.companyId : supplierCompany?.id || values.companyId
 
@@ -460,6 +527,22 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
       toast.error(isAdminPortal ? 'Select a supplier company first' : 'No company found')
       return
     }
+
+    if (wholesaleCreationBlocked) {
+      toast.error('Your B2B supplier profile must be approved before creating wholesale products.')
+      return
+    }
+
+    const normalizedPriceTiers = priceTiers
+      .filter((tier) => tier.minQty && tier.priceMin)
+      .map((tier) => ({
+        minQty: parseFloat(tier.minQty),
+        maxQty: tier.maxQty ? parseFloat(tier.maxQty) : undefined,
+        priceMin: parseFloat(tier.priceMin),
+        priceMax: tier.priceMax ? parseFloat(tier.priceMax) : undefined,
+      }))
+
+    const primaryTier = normalizedPriceTiers[0]
 
     const payload = {
       name: values.name,
@@ -471,10 +554,10 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
       description: values.description || undefined,
       sku: values.sku || undefined,
       barcode: values.barcode || undefined,
-      moq: values.moq ? parseFloat(values.moq) : undefined,
+      moq: primaryTier?.minQty ?? (values.moq ? parseFloat(values.moq) : undefined),
       moqUnit: values.moqUnit || undefined,
-      priceMin: values.priceMin ? parseFloat(values.priceMin) : undefined,
-      priceMax: values.priceMax ? parseFloat(values.priceMax) : undefined,
+      priceMin: primaryTier?.priceMin ?? (values.priceMin ? parseFloat(values.priceMin) : undefined),
+      priceMax: primaryTier?.priceMax ?? (values.priceMax ? parseFloat(values.priceMax) : undefined),
       priceNegotiable: values.priceNegotiable,
       productionCapacity: values.productionCapacity || undefined,
       leadTime: values.leadTime || undefined,
@@ -499,6 +582,7 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
         await post(`/products/${savedProductId}/images`, { images })
         await post(`/products/${savedProductId}/videos`, { videos })
         await post(`/products/${savedProductId}/documents`, { documents })
+        await post(`/products/${savedProductId}/price-tiers`, { priceTiers: normalizedPriceTiers })
         await post(`/products/${savedProductId}/specifications`, { specifications: specs })
       }
 
@@ -561,12 +645,26 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
         </div>
       </div>
 
+      {wholesaleCreationBlocked ? (
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+            <div>
+              <p className="font-semibold">Your B2B supplier profile must be approved before creating wholesale products.</p>
+              <p className="mt-1 text-amber-800">
+                Complete your B2B company profile and wait for supplier verification approval before publishing wholesale items.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div className="rounded-xl border border-gray-100 bg-white p-6">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <h3 className="font-bold text-gray-900">Product Media</h3>
-              <p className="mt-1 text-sm text-gray-500">Upload gallery images, thumbnail, videos, YouTube links, and PDF specification files.</p>
+              <p className="mt-1 text-sm text-gray-500">Upload gallery images, thumbnail, videos, YouTube links, and unlimited catalog or specification PDF files.</p>
             </div>
           </div>
 
@@ -794,25 +892,29 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
 
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="mb-3">
-                <h4 className="text-sm font-semibold text-gray-800">PDF Specification</h4>
+                <h4 className="text-sm font-semibold text-gray-800">Catalog / PDF Documents</h4>
               </div>
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:border-blue-300 hover:text-blue-700">
                 {uploadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Browse
-                <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={uploadingPdf} />
+                Add PDF
+                <input type="file" multiple accept="application/pdf" className="hidden" onChange={handlePdfUpload} disabled={uploadingPdf} />
               </label>
-              {documents[0] ? (
-                <div className="mt-3 flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
-                  <a href={documents[0].url} target="_blank" rel="noreferrer" className="truncate text-blue-700 hover:underline">
-                    {documents[0].name}
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setDocuments([])}
-                    className="text-red-500 hover:underline"
-                  >
-                    Remove
-                  </button>
+              {documents.length ? (
+                <div className="mt-3 space-y-2">
+                  {documents.map((document, index) => (
+                    <div key={`${document.url}-${index}`} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
+                      <a href={document.url} target="_blank" rel="noreferrer" className="truncate text-blue-700 hover:underline">
+                        {document.name}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setDocuments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                        className="text-red-500 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : null}
             </div>
@@ -1039,25 +1141,108 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
 
             {activeTab === 'pricing' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <FormField label="Min Price (USD)">
-                    <input {...register('priceMin')} type="number" step="0.01" className={inputCls} placeholder="e.g. 5.00" />
-                  </FormField>
-                  <FormField label="Max Price (USD)">
-                    <input {...register('priceMax')} type="number" step="0.01" className={inputCls} placeholder="e.g. 15.00" />
-                  </FormField>
-                </div>
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                   <input type="checkbox" {...register('priceNegotiable')} className="rounded text-blue-600" />
                   Price is negotiable
                 </label>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <FormField label="Minimum Order Quantity">
-                    <input {...register('moq')} type="number" className={inputCls} placeholder="e.g. 100" />
-                  </FormField>
-                  <FormField label="MOQ Unit">
-                    <input {...register('moqUnit')} className={inputCls} placeholder="e.g. Pieces, Kg, Sets" />
-                  </FormField>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-800">Price ranges by order quantity</h3>
+                    <button
+                      type="button"
+                      onClick={() => setPriceTiers((previous) => [...previous, { minQty: '', maxQty: '', priceMin: '', priceMax: '' }])}
+                      className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add New
+                    </button>
+                  </div>
+
+                  {priceTiers.map((tier, index) => (
+                    <div key={index} className="rounded-xl border border-gray-200 p-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <FormField label="Min Price (USD)">
+                          <input
+                            value={tier.priceMin}
+                            onChange={(event) => setPriceTiers((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, priceMin: event.target.value } : item))}
+                            type="number"
+                            step="0.01"
+                            className={inputCls}
+                            placeholder="e.g. 1.00"
+                          />
+                        </FormField>
+                        <FormField label="Max Price (USD)">
+                          <input
+                            value={tier.priceMax}
+                            onChange={(event) => setPriceTiers((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, priceMax: event.target.value } : item))}
+                            type="number"
+                            step="0.01"
+                            className={inputCls}
+                            placeholder="e.g. 4.00"
+                          />
+                        </FormField>
+                        <FormField label="Minimum Order Quantity">
+                          <input
+                            value={tier.minQty}
+                            onChange={(event) => setPriceTiers((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, minQty: event.target.value } : item))}
+                            type="number"
+                            className={inputCls}
+                            placeholder="e.g. 2"
+                          />
+                        </FormField>
+                        <FormField label="Maximum Order Quantity">
+                          <input
+                            value={tier.maxQty}
+                            onChange={(event) => setPriceTiers((previous) => previous.map((item, itemIndex) => itemIndex === index ? { ...item, maxQty: event.target.value } : item))}
+                            type="number"
+                            className={inputCls}
+                            placeholder="e.g. 4"
+                          />
+                        </FormField>
+                      </div>
+
+                      <div className="mt-4 flex justify-between gap-4">
+                        <div className="flex-1">
+                          <FormField label="MOQ Unit">
+                            <div className="space-y-3">
+                              <select {...register('moqUnit')} className={inputCls}>
+                                <option value="">Select MOQ unit</option>
+                                {moqUnitOptions.map((unit) => (
+                                  <option key={unit} value={unit}>
+                                    {unit}
+                                  </option>
+                                ))}
+                              </select>
+                              <div className="flex flex-col gap-2 md:flex-row">
+                                <input
+                                  value={customMoqUnit}
+                                  onChange={(event) => setCustomMoqUnit(event.target.value)}
+                                  className={inputCls}
+                                  placeholder="Add new unit"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddMoqUnit}
+                                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:border-blue-300 hover:text-blue-700"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                  Add New
+                                </button>
+                              </div>
+                            </div>
+                          </FormField>
+                        </div>
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={() => setPriceTiers((previous) => previous.length === 1 ? [{ minQty: '', maxQty: '', priceMin: '', priceMax: '' }] : previous.filter((_, itemIndex) => itemIndex !== index))}
+                            className="rounded-lg p-2 text-red-500 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -1120,6 +1305,7 @@ export function ProductEditor({ mode, portal, productId }: ProductEditorProps) {
             loadingText={mode === 'create' ? 'Saving...' : 'Updating...'}
             icon={isLoadingProduct ? <Package className="h-4 w-4" /> : <Save className="h-4 w-4" />}
             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-700 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-800 disabled:opacity-60"
+            disabled={isSubmitting || wholesaleCreationBlocked}
           >
             {mode === 'create' ? 'Save Product' : 'Update Product'}
           </LoadingButton>

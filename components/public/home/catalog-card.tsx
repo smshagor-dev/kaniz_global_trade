@@ -2,6 +2,9 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { CheckCircle2, MapPin } from 'lucide-react'
 import { CurrencyRange } from '@/components/currency/currency-range'
+import { RatingSummaryLabel } from '@/components/public/rating-summary'
+import { TrustBadge } from '@/components/public/trust-badge'
+import type { RatingSummary } from '@/lib/ratings/public'
 
 type CatalogCardProduct = {
   id: string
@@ -17,11 +20,13 @@ type CatalogCardProduct = {
     name: string
     slug: string
     verificationStatus?: string | null
+    fraudPublicFlag?: 'VERIFIED' | 'UNDER_REVIEW' | 'LIMITED_ACCESS' | 'HIGH_RISK' | 'BLOCKED' | null
     country?: { name: string; code?: string | null } | null
   }
   category?: { name: string; slug?: string | null } | null
   subcategory?: { name: string; slug?: string | null } | null
   currency?: { symbol?: string | null; code?: string | null } | null
+  ratingSummary?: RatingSummary | null
 }
 
 interface CatalogCardProps {
@@ -78,6 +83,9 @@ export function CatalogCard({ product }: CatalogCardProps) {
           <p className="mt-1 text-xs text-gray-500">
             {moq ? `MOQ: ${moq} ${product.moqUnit || 'units'}` : 'MOQ available on request'}
           </p>
+          {product.ratingSummary ? (
+            <RatingSummaryLabel summary={product.ratingSummary} noun="ratings" className="mt-2 text-xs" />
+          ) : null}
         </div>
 
         <div className="space-y-2 text-sm text-gray-600">
@@ -88,7 +96,9 @@ export function CatalogCard({ product }: CatalogCardProps) {
             <MapPin className="h-4 w-4 text-gray-400" />
             <span>{location}</span>
           </div>
-          {isVerified ? (
+          {product.company.fraudPublicFlag ? (
+            <TrustBadge flag={product.company.fraudPublicFlag} />
+          ) : isVerified ? (
             <div className="flex items-center gap-2 text-emerald-700">
               <CheckCircle2 className="h-4 w-4" />
               <span className="font-medium">Verified supplier</span>

@@ -49,6 +49,7 @@ interface ExistingCatalog {
   isFeatured: boolean
   isVerified: boolean
   images: Array<{ url: string; isPrimary: boolean; alt?: string | null }>
+  documents: Array<{ name: string; url: string; type?: string | null }>
   specifications: Array<{ key: string; value: string; unit?: string | null }>
 }
 
@@ -79,6 +80,7 @@ export function CatalogForm({ mode, catalogId }: CatalogFormProps) {
   const router = useRouter()
   const [form, setForm] = useState(defaultForm)
   const [images, setImages] = useState<Array<{ url: string; isPrimary: boolean; alt?: string }>>([])
+  const [documents, setDocuments] = useState<Array<{ name: string; url: string; type: string }>>([])
   const [specifications, setSpecifications] = useState<Array<{ key: string; value: string; unit?: string }>>([])
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -127,6 +129,7 @@ export function CatalogForm({ mode, catalogId }: CatalogFormProps) {
       isVerified: catalog.isVerified,
     })
     setImages(catalog.images.map((image) => ({ url: image.url, isPrimary: image.isPrimary, alt: image.alt || '' })))
+    setDocuments(catalog.documents.map((document) => ({ name: document.name, url: document.url, type: document.type || 'PDF_CATALOG' })))
     setSpecifications(catalog.specifications.map((specification) => ({ key: specification.key, value: specification.value, unit: specification.unit || '' })))
   }, [catalogData, mode])
 
@@ -163,6 +166,34 @@ export function CatalogForm({ mode, catalogId }: CatalogFormProps) {
     }
   }
 
+  async function handleDocumentUpload(files: FileList | null) {
+    if (!files?.length) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(files)) {
+        const body = new FormData()
+        body.append('file', file)
+        body.append('type', 'product_doc')
+        const response = await axios.post('/api/upload', body, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        setDocuments((current) => [
+          ...current,
+          {
+            name: file.name,
+            url: response.data.data.url,
+            type: 'PDF_CATALOG',
+          },
+        ])
+      }
+      toast.success('Catalog documents uploaded')
+    } catch {
+      toast.error('Document upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function handleSubmit() {
     if (!form.companyId || !form.categoryId || !form.name.trim()) {
       toast.error('Company, category, and title are required')
@@ -179,6 +210,7 @@ export function CatalogForm({ mode, catalogId }: CatalogFormProps) {
         priceMax: form.priceMax ? Number(form.priceMax) : undefined,
         images,
         specifications: specifications.filter((item) => item.key && item.value),
+        documents,
       }
 
       if (mode === 'create') {
@@ -324,6 +356,37 @@ export function CatalogForm({ mode, catalogId }: CatalogFormProps) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Catalog documents</h2>
+            <p className="text-sm text-gray-500">Upload unlimited PDF catalogs and brochures for this product.</p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-blue-300 hover:text-blue-700">
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            Add PDF
+            <input type="file" multiple accept="application/pdf" className="hidden" onChange={(e) => handleDocumentUpload(e.target.files)} />
+          </label>
+        </div>
+        <div className="space-y-2">
+          {documents.map((document, index) => (
+            <div key={`${document.url}-${index}`} className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <a href={document.url} target="_blank" rel="noreferrer" className="truncate text-sm font-medium text-blue-700 hover:underline">
+                {document.name}
+              </a>
+              <button
+                type="button"
+                onClick={() => setDocuments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                className="rounded-lg border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          {!documents.length && <p className="text-sm text-gray-500">No catalog documents added yet.</p>}
         </div>
       </div>
 

@@ -1,10 +1,14 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, isAdmin, ROLES, ApiError } from '@/lib/permissions'
+import { requireAuth, isAdmin, ROLES, ApiError, assertComplianceAccess } from '@/lib/permissions'
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 import { createNotification } from '@/server/services/notification'
 import { sendNewInquiryEmail } from '@/lib/email'
+import { trackInquiryCreated } from '@/lib/analytics/tracking'
+import { FraudEventType } from '@prisma/client'
+import { assertFraudActionAllowed, screenFraudEvent } from '@/lib/fraud/service'
+import { FRAUD_ACTIONS } from '@/lib/fraud/shared'
 
 const createInquirySchema = z.object({
   companyId: z.string(),
@@ -70,6 +74,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const data = createInquirySchema.parse(body)
 
+    await assertFraudActionAllowed({
+      userId: authUser.userId,
+      action: FRAUD_ACTIONS.INQUIRY_CREATE,
+    })
+    if (!isAdmin(authUser)) {
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'BUYER',
+      })
+    }
+
     const company = await prisma.company.findUnique({
       where: { id: data.companyId, status: 'ACTIVE', deletedAt: null },
       include: {
@@ -95,20 +110,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Increment company inquiry count
-    await prisma.company.update({
-      where: { id: data.companyId },
-      data: { totalInquiries: { increment: 1 } },
-    })
-
-    // Track analytics
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    await prisma.companyAnalytic.upsert({
-      where: { companyId_date: { companyId: data.companyId, date: today } },
-      create: { companyId: data.companyId, date: today, inquiries: 1 },
-      update: { inquiries: { increment: 1 } },
-    }).catch(() => {})
+    await trackInquiryCreated(data.companyId, data.productId)
 
     // Notify supplier
     const owner = company.companyUsers[0]
@@ -131,6 +133,23 @@ export async function POST(req: NextRequest) {
         console.error('Inquiry email failed:', emailError)
       })
     }
+
+    await screenFraudEvent({
+      req,
+      actorUserId: authUser.userId,
+      userId: authUser.userId,
+      eventType: FraudEventType.INQUIRY_CREATE,
+      sourceModule: 'inquiries',
+      title: 'Buyer inquiry submitted',
+      summary: `Inquiry "${data.subject}" sent to supplier.`,
+      payload: {
+        companyId: data.companyId,
+        subject: data.subject,
+        quantity: data.quantity,
+        targetPrice: data.targetPrice,
+        destinationCountryId: data.destinationCountryId,
+      },
+    })
 
     return successResponse(inquiry, 'Inquiry sent successfully', undefined, 201)
   } catch (error) {

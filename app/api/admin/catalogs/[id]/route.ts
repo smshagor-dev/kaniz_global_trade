@@ -29,6 +29,7 @@ const updateCatalogSchema = z.object({
   isFeatured: z.boolean().default(false),
   isVerified: z.boolean().default(false),
   images: z.array(z.object({ url: z.string().url(), isPrimary: z.boolean().optional().default(false), alt: z.string().optional() })).default([]),
+  documents: z.array(z.object({ name: z.string().min(1), url: z.string().url(), type: z.string().optional() })).default([]),
   specifications: z.array(z.object({ key: z.string().min(1), value: z.string().min(1), unit: z.string().optional() })).default([]),
 })
 
@@ -44,6 +45,7 @@ export async function GET(
       where: { id },
       include: {
         images: { orderBy: { sortOrder: 'asc' } },
+        documents: true,
         specifications: { orderBy: { sortOrder: 'asc' } },
         category: { select: { id: true, name: true } },
         subcategory: { select: { id: true, name: true } },
@@ -81,6 +83,7 @@ export async function PUT(
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.productImage.deleteMany({ where: { productId: id } })
+      await tx.productDocument.deleteMany({ where: { productId: id } })
       await tx.productSpecification.deleteMany({ where: { productId: id } })
 
       return tx.product.update({
@@ -124,6 +127,15 @@ export async function PUT(
                   value: specification.value,
                   unit: specification.unit,
                   sortOrder: index,
+                })),
+              }
+            : undefined,
+          documents: data.documents.length
+            ? {
+                create: data.documents.map((document) => ({
+                  name: document.name,
+                  url: document.url,
+                  type: document.type,
                 })),
               }
             : undefined,

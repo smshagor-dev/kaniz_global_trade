@@ -46,7 +46,6 @@ const emptyForm = {
   score: '',
   summary: '',
   findings: '',
-  reportUrl: '',
   inspectedAt: '',
   status: 'COMPLETED' as InspectionReport['status'],
 }
@@ -102,7 +101,6 @@ export default function SupplierInspectionsPage() {
       score: report.score != null ? String(report.score) : '',
       summary: report.summary || '',
       findings: report.findings || '',
-      reportUrl: report.reportUrl || '',
       inspectedAt: report.inspectedAt ? report.inspectedAt.slice(0, 10) : '',
       status: report.status,
     })
@@ -125,7 +123,6 @@ export default function SupplierInspectionsPage() {
         score: form.score.trim() ? Number(form.score) : undefined,
         summary: form.summary.trim() || undefined,
         findings: form.findings.trim() || undefined,
-        reportUrl: form.reportUrl.trim() || undefined,
         reportStorageKey: undefined,
         reportFilename: undefined,
         reportMimeType: undefined,
@@ -302,7 +299,6 @@ export default function SupplierInspectionsPage() {
           <input value={form.inspectorName} onChange={(e) => setForm((prev) => ({ ...prev, inspectorName: e.target.value }))} placeholder="Inspector name" className={inputCls} />
           <input value={form.reportNumber} onChange={(e) => setForm((prev) => ({ ...prev, reportNumber: e.target.value }))} placeholder="Report number" className={inputCls} />
           <input value={form.score} onChange={(e) => setForm((prev) => ({ ...prev, score: e.target.value }))} placeholder="Score (0-100)" type="number" min="0" max="100" className={inputCls} />
-          <input value={form.reportUrl} onChange={(e) => setForm((prev) => ({ ...prev, reportUrl: e.target.value }))} placeholder="Report URL" className={`${inputCls} xl:col-span-2`} />
           <input value={form.inspectedAt} onChange={(e) => setForm((prev) => ({ ...prev, inspectedAt: e.target.value }))} type="date" className={inputCls} />
           <select value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value as InspectionReport['status'] }))} className={inputCls}>
             {supplierStatusOptions.map((status) => (

@@ -1,14 +1,21 @@
 import { Server as SocketServer } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-adapter'
 import { Redis } from 'ioredis'
+import { FraudEventType, FraudRiskLevel } from '@prisma/client'
 import { verifyAccessToken } from '../../lib/auth/jwt'
 import prisma from '../../lib/db/prisma'
 import { setUserOnline, setUserOffline } from '../../lib/db/redis'
+import { assertFraudActionAllowed, screenFraudEvent } from '../../lib/fraud/service'
+import { FRAUD_ACTIONS } from '../../lib/fraud/shared'
+import { createNotification } from '../../server/services/notification'
+import { isAdmin, requireChatRoomAccess, requireVerifiedBuyer, requireVerifiedSupplier, ROLES } from '../../lib/permissions'
+import { trackCompanyMessage } from '../../lib/analytics/tracking'
 
 interface SocketUser {
   userId: string
   email: string
   roles: string[]
+  companyId?: string
 }
 
 declare module 'socket.io' {
@@ -52,15 +59,23 @@ export function initSocketServer(io: SocketServer): void {
       const payload = verifyAccessToken(token)
       const user = await prisma.user.findUnique({
         where: { id: payload.userId, deletedAt: null },
-        include: { roles: { include: { role: true } } },
+        include: {
+          roles: { include: { role: true } },
+          companyUsers: {
+            where: { isPrimary: true },
+            select: { companyId: true },
+            take: 1,
+          },
+        },
       })
 
-      if (!user || user.status === 'SUSPENDED') return next(new Error('Invalid user'))
+      if (!user || user.status === 'SUSPENDED' || user.fraudRiskLevel === FraudRiskLevel.BLOCKED) return next(new Error('Invalid user'))
 
       socket.user = {
         userId: user.id,
         email: user.email,
         roles: user.roles.map((ur) => ur.role.name),
+        companyId: user.companyUsers[0]?.companyId,
       }
 
       next()
@@ -85,15 +100,15 @@ export function initSocketServer(io: SocketServer): void {
     // ============================
     socket.on('chat:join', async ({ roomId }) => {
       try {
-        const participant = await prisma.chatParticipant.findUnique({
-          where: { roomId_userId: { roomId, userId: user.userId } },
+        await requireChatRoomAccess({
+          user,
+          roomId,
         })
-        if (!participant || participant.isBlocked) return
 
         socket.join(`room:${roomId}`)
         socket.emit('chat:joined', { roomId })
       } catch (err) {
-        socket.emit('error', { message: 'Failed to join chat' })
+        socket.emit('error', { message: err instanceof Error ? err.message : 'Failed to join chat' })
       }
     })
 
@@ -104,10 +119,24 @@ export function initSocketServer(io: SocketServer): void {
 
     socket.on('message:send', async ({ roomId, content, type = 'TEXT', replyToId, attachments }) => {
       try {
-        const participant = await prisma.chatParticipant.findUnique({
-          where: { roomId_userId: { roomId, userId: user.userId } },
+        const access = await requireChatRoomAccess({
+          user,
+          roomId,
         })
-        if (!participant || participant.isBlocked) return
+        const room = access.room
+
+        await assertFraudActionAllowed({
+          userId: user.userId,
+          companyId: room?.companyId || undefined,
+          action: FRAUD_ACTIONS.MESSAGE_SEND,
+        })
+        if (!isAdmin({ ...user, permissions: [] as string[], email: user.email })) {
+          if (user.roles.includes(ROLES.BUYER)) {
+            await requireVerifiedBuyer({ ...user, permissions: [] as string[], email: user.email })
+          } else {
+            await requireVerifiedSupplier({ ...user, permissions: [] as string[], email: user.email }, room?.companyId || user.companyId)
+          }
+        }
 
         socket.join(`room:${roomId}`)
 
@@ -134,6 +163,35 @@ export function initSocketServer(io: SocketServer): void {
           data: { lastMessage: content?.substring(0, 100), lastMsgAt: new Date() },
         })
 
+        if (room?.companyId) {
+          await trackCompanyMessage(room.companyId)
+        }
+
+        const req = new Request('http://socket.local/message', {
+          headers: {
+            'user-agent': socket.handshake.headers['user-agent'] || '',
+            'x-forwarded-for': Array.isArray(socket.handshake.address) ? socket.handshake.address[0] : socket.handshake.address || 'unknown',
+            'x-device-id': String(socket.handshake.auth?.deviceId || ''),
+          },
+        })
+
+        await screenFraudEvent({
+          req,
+          actorUserId: user.userId,
+          userId: user.userId,
+          companyId: room?.companyId || undefined,
+          eventType: FraudEventType.SUSPICIOUS_ACTIVITY,
+          sourceModule: 'socket/chat',
+          title: 'Live chat message sent',
+          summary: 'Marketplace live chat message created.',
+          payload: {
+            roomId,
+            type,
+            content,
+            attachmentCount: attachments?.length || 0,
+          },
+        })
+
         // Emit to all participants in room
         io.to(`room:${roomId}`).emit('message:new', message)
 
@@ -143,6 +201,13 @@ export function initSocketServer(io: SocketServer): void {
         })
 
         for (const p of participants) {
+          await createNotification({
+            userId: p.userId,
+            type: 'NEW_MESSAGE',
+            title: 'New message',
+            message: `${user.email} sent a message`,
+            data: { roomId, messageId: message.id },
+          })
           io.to(`user:${p.userId}`).emit('notification:new', {
             type: 'NEW_MESSAGE',
             title: 'New message',
@@ -157,6 +222,11 @@ export function initSocketServer(io: SocketServer): void {
 
     socket.on('message:read', async ({ roomId, messageId }) => {
       try {
+        await requireChatRoomAccess({
+          user,
+          roomId,
+        })
+
         await prisma.messageReadReceipt.upsert({
           where: { messageId_userId: { messageId, userId: user.userId } },
           create: { messageId, userId: user.userId },
@@ -172,18 +242,30 @@ export function initSocketServer(io: SocketServer): void {
       } catch { /* non-critical */ }
     })
 
-    socket.on('typing:start', ({ roomId }) => {
-      socket.to(`room:${roomId}`).emit('typing:start', {
-        userId: user.userId,
-        roomId,
-      })
+    socket.on('typing:start', async ({ roomId }) => {
+      try {
+        await requireChatRoomAccess({
+          user,
+          roomId,
+        })
+        socket.to(`room:${roomId}`).emit('typing:start', {
+          userId: user.userId,
+          roomId,
+        })
+      } catch { /* non-critical */ }
     })
 
-    socket.on('typing:stop', ({ roomId }) => {
-      socket.to(`room:${roomId}`).emit('typing:stop', {
-        userId: user.userId,
-        roomId,
-      })
+    socket.on('typing:stop', async ({ roomId }) => {
+      try {
+        await requireChatRoomAccess({
+          user,
+          roomId,
+        })
+        socket.to(`room:${roomId}`).emit('typing:stop', {
+          userId: user.userId,
+          roomId,
+        })
+      } catch { /* non-critical */ }
     })
 
     // ============================

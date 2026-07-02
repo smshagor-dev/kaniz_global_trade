@@ -109,7 +109,59 @@ interface PaymentReadinessResponse {
   gateways: PaymentGatewayReadiness[]
 }
 
+interface AIProviderRecord {
+  id: string
+  provider: 'gemini' | 'claude' | 'chatgpt'
+  label: string
+  textModel: string
+  imageModel: string
+  baseUrl?: string
+  enabled: boolean
+  hasApiKey: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 const CURRENCY_PAGE_SIZE = 15
+
+function createAIProviderForm(provider: AIProviderRecord['provider'] = 'gemini') {
+  if (provider === 'claude') {
+    return {
+      id: '',
+      provider,
+      label: 'Claude',
+      apiKey: '',
+      textModel: 'claude-3-5-sonnet-latest',
+      imageModel: 'claude-3-5-sonnet-latest',
+      baseUrl: '',
+      enabled: true,
+    }
+  }
+
+  if (provider === 'chatgpt') {
+    return {
+      id: '',
+      provider,
+      label: 'ChatGPT',
+      apiKey: '',
+      textModel: 'gpt-4o-mini',
+      imageModel: 'gpt-4o-mini',
+      baseUrl: '',
+      enabled: true,
+    }
+  }
+
+  return {
+    id: '',
+    provider,
+    label: 'Gemini',
+    apiKey: '',
+    textModel: 'gemini-2.0-flash',
+    imageModel: 'gemini-2.0-flash',
+    baseUrl: '',
+    enabled: true,
+  }
+}
 
 interface GatewayCardConfig {
   id: string
@@ -368,8 +420,19 @@ export default function AdminSettingsGroupPage() {
     queryFn: () => get<ServicePartnerRecord[]>('/admin/partners'),
     enabled: group === 'PARTNERS',
   })
+  const { data: aiProvidersSnapshot, refetch: refetchAiProvidersSnapshot } = useQuery({
+    queryKey: ['admin-ai-providers', group],
+    queryFn: () => get<AIProviderRecord[]>('/admin/ai/providers'),
+    enabled: group === 'AI',
+  })
 
-  const settings = useMemo(() => ((data?.data as SettingsResponse | undefined)?.items || []), [data?.data])
+  const settings = useMemo(
+    () =>
+      (((data?.data as SettingsResponse | undefined)?.items || []) as SettingItem[]).filter(
+        (item) => !(group === 'AI' && item.key === 'AI_MULTI_AGENT_PROVIDERS')
+      ),
+    [data?.data, group]
+  )
   const label = (data?.data as SettingsResponse | undefined)?.groupLabel || group
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -406,6 +469,9 @@ export default function AdminSettingsGroupPage() {
     isDefault: false,
     isActive: true,
   })
+  const [savingAiProvider, setSavingAiProvider] = useState(false)
+  const [deletingAiProviderId, setDeletingAiProviderId] = useState<string | null>(null)
+  const [aiProviderForm, setAiProviderForm] = useState(createAIProviderForm())
 
   const mergedValues = settings.reduce<Record<string, string>>((acc, item) => {
     acc[item.key] = values[item.key] ?? item.value ?? ''
@@ -450,6 +516,7 @@ export default function AdminSettingsGroupPage() {
       if (group === 'CURRENCY') refetchCurrencySnapshot()
       if (group === 'LANGUAGE') refetchLanguageSnapshot()
       if (group === 'PARTNERS') refetchPartnersSnapshot()
+      if (group === 'AI') refetchAiProvidersSnapshot()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Settings save failed'
       toast.error(message)
@@ -570,6 +637,38 @@ export default function AdminSettingsGroupPage() {
     }
   }
 
+  async function saveAiProviderRecord() {
+    setSavingAiProvider(true)
+    try {
+      await post('/admin/ai/providers', aiProviderForm)
+      toast.success(aiProviderForm.id ? 'AI provider updated' : 'AI provider added')
+      setAiProviderForm(createAIProviderForm())
+      refetchAiProvidersSnapshot()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI provider save failed'
+      toast.error(message)
+    } finally {
+      setSavingAiProvider(false)
+    }
+  }
+
+  async function deleteAiProviderRecord(id: string) {
+    setDeletingAiProviderId(id)
+    try {
+      await del('/admin/ai/providers', { id })
+      toast.success('AI provider removed')
+      if (aiProviderForm.id === id) {
+        setAiProviderForm(createAIProviderForm())
+      }
+      refetchAiProvidersSnapshot()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI provider delete failed'
+      toast.error(message)
+    } finally {
+      setDeletingAiProviderId(null)
+    }
+  }
+
   async function verifyFfmpegPath() {
     setVerifyingFfmpeg(true)
     try {
@@ -648,6 +747,8 @@ export default function AdminSettingsGroupPage() {
   const currencySnapshotData = currencySnapshot?.data as CurrencySnapshotResponse | undefined
   const languageSnapshotData = languageSnapshot?.data as LanguageAdminSnapshotResponse | undefined
   const partnersSnapshotData = (partnersSnapshot?.data as ServicePartnerRecord[] | undefined) || []
+  const aiProvidersSnapshotData = (aiProvidersSnapshot?.data as AIProviderRecord[] | undefined) || []
+  const isAIGroup = group === 'AI'
   const isCurrencyGroup = group === 'CURRENCY'
   const isLanguageGroup = group === 'LANGUAGE'
   const isPartnersGroup = group === 'PARTNERS'
@@ -667,7 +768,7 @@ export default function AdminSettingsGroupPage() {
           <h1 className="text-2xl font-bold text-gray-900">{label}</h1>
           <p className="mt-1 text-sm text-gray-500">
             {group === 'AI'
-              ? 'Store the Google Gemini key here, enable AI search by default, and control both text query understanding and image search from one place.'
+              ? 'Run AI Search and Image Search as a multi-agent system. Add Gemini, Claude, and ChatGPT providers, then keep orchestration toggles in the same screen.'
               : group === 'HOME'
               ? 'Control homepage section visibility, item limits, and the final CTA copy from Kaniz Global Trade settings.'
               : group === 'PAYMENT'
@@ -729,7 +830,142 @@ export default function AdminSettingsGroupPage() {
         </div>
       </div>
 
-      {group === 'PAYMENT' ? (
+      {isAIGroup ? (
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900">Multi-Agent Controls</h2>
+              <p className="text-sm text-gray-500">These runtime settings control orchestration, fallback behavior, and the legacy Gemini bridge. The provider JSON row is managed below automatically.</p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {settings.map((item) => (
+                <SettingField
+                  key={item.key}
+                  item={item}
+                  value={mergedValues[item.key] ?? ''}
+                  onChange={(value) => setValue(item.key, value)}
+                  onReset={() => resetSetting(item.key)}
+                  resetting={resettingKey === item.key}
+                  compact
+                />
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-gray-900">Add Provider Agent</h2>
+              <p className="text-sm text-gray-500">Add provider-based agents for Gemini, Claude, or ChatGPT. Enabled agents join the search orchestrator and appear in the table below.</p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <select
+                value={aiProviderForm.provider}
+                onChange={(event) => setAiProviderForm(createAIProviderForm(event.target.value as AIProviderRecord['provider']))}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              >
+                <option value="gemini">Gemini</option>
+                <option value="claude">Claude</option>
+                <option value="chatgpt">ChatGPT</option>
+              </select>
+              <input value={aiProviderForm.label} onChange={(event) => setAiProviderForm((prev) => ({ ...prev, label: event.target.value }))} placeholder="Label" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={aiProviderForm.textModel} onChange={(event) => setAiProviderForm((prev) => ({ ...prev, textModel: event.target.value }))} placeholder="Text model" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={aiProviderForm.imageModel} onChange={(event) => setAiProviderForm((prev) => ({ ...prev, imageModel: event.target.value }))} placeholder="Image model" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm" />
+              <input value={aiProviderForm.apiKey} onChange={(event) => setAiProviderForm((prev) => ({ ...prev, apiKey: event.target.value }))} placeholder="API key" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm md:col-span-2" />
+              <input value={aiProviderForm.baseUrl} onChange={(event) => setAiProviderForm((prev) => ({ ...prev, baseUrl: event.target.value }))} placeholder="Base URL (optional)" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm md:col-span-2" />
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                <span>Enabled agent</span>
+                <input type="checkbox" checked={aiProviderForm.enabled} onChange={(event) => setAiProviderForm((prev) => ({ ...prev, enabled: event.target.checked }))} />
+              </label>
+            </div>
+
+            <div className="mt-3 flex gap-3">
+              <button
+                type="button"
+                onClick={() => void saveAiProviderRecord()}
+                disabled={savingAiProvider || !aiProviderForm.label.trim() || !aiProviderForm.textModel.trim() || !aiProviderForm.imageModel.trim()}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingAiProvider ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {savingAiProvider ? 'Saving...' : aiProviderForm.id ? 'Update Provider' : 'Add Provider'}
+              </button>
+              {aiProviderForm.id ? (
+                <button type="button" onClick={() => setAiProviderForm(createAIProviderForm())} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700">
+                  Clear
+                </button>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <h2 className="text-base font-semibold text-gray-900">Configured Agent Providers</h2>
+              <p className="text-sm text-gray-500">Each row is an agent the orchestrator can use for AI Search and AI Image Search.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Provider</th>
+                    <th className="px-4 py-3 font-medium">Label</th>
+                    <th className="px-4 py-3 font-medium">Text Model</th>
+                    <th className="px-4 py-3 font-medium">Image Model</th>
+                    <th className="px-4 py-3 font-medium">API Key</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Updated</th>
+                    <th className="px-4 py-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {aiProvidersSnapshotData.map((provider) => (
+                    <tr key={provider.id} className="text-gray-700">
+                      <td className="px-4 py-3 uppercase">{provider.provider}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-900">{provider.label}</td>
+                      <td className="px-4 py-3">{provider.textModel}</td>
+                      <td className="px-4 py-3">{provider.imageModel}</td>
+                      <td className="px-4 py-3">{provider.hasApiKey ? 'Saved' : 'Missing'}</td>
+                      <td className="px-4 py-3">{provider.enabled ? 'Enabled' : 'Disabled'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{new Date(provider.updatedAt).toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAiProviderForm({
+                              id: provider.id,
+                              provider: provider.provider,
+                              label: provider.label,
+                              apiKey: '',
+                              textModel: provider.textModel,
+                              imageModel: provider.imageModel,
+                              baseUrl: provider.baseUrl || '',
+                              enabled: provider.enabled,
+                            })}
+                            className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteAiProviderRecord(provider.id)}
+                            disabled={deletingAiProviderId === provider.id}
+                            className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {deletingAiProviderId === provider.id ? 'Removing...' : 'Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!aiProvidersSnapshotData.length && (
+              <div className="px-4 py-6 text-sm text-gray-500">No AI provider agents configured yet.</div>
+            )}
+          </section>
+        </div>
+      ) : group === 'PAYMENT' ? (
         <div className="space-y-5">
           {paymentReadiness ? (
             <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">

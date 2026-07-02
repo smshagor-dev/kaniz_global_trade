@@ -16,11 +16,12 @@ import {
   LogOut, Globe2, Shield, ShieldCheck, ChevronRight, ChevronDown, ShoppingBag, Truck, PackageCheck, Clapperboard, ClipboardCheck, Megaphone, Landmark, BadgeDollarSign, FolderTree,
 } from 'lucide-react'
 import { getSupplierDashboardSectionForPath } from '@/lib/supplier-dashboard-access'
+import { TrustBadge } from '@/components/public/trust-badge'
 
 const navItems = [
   { key: 'overview', href: '/dashboard/overview', icon: LayoutDashboard, label: 'Overview' },
   { key: 'company', href: '/dashboard/company', icon: Building2, label: 'Company Profile' },
-  { key: 'company-verification', href: '/dashboard/company-verification', icon: ShieldCheck, label: 'Company Verification' },
+  { key: 'b2b-company', href: '/dashboard/b2b/company', icon: BadgeDollarSign, label: 'Supplier Company' },
   { key: 'categories', href: '/dashboard/categories', icon: FolderTree, label: 'Categories' },
   { key: 'products', href: '/dashboard/products', icon: Package, label: 'Products' },
   { key: 'inquiries', href: '/dashboard/inquiries', icon: MessageSquare, label: 'Inquiries' },
@@ -69,6 +70,15 @@ export default function SupplierDashboardLayout({ children }: { children: React.
     queryKey: ['supplier-rfq-menu-count'],
     queryFn: () => get<Array<{ quotations?: Array<{ id: string }> }>>('/rfqs?limit=100'),
     enabled: isAuth && isSupplier && !!accessData?.data?.dashboardAccess.includes('rfq-requests'),
+    staleTime: 60 * 1000,
+  })
+  const { data: fraudStatusData } = useQuery({
+    queryKey: ['me-fraud-status', 'supplier'],
+    queryFn: () => get<{
+      user?: { fraudPublicFlag?: 'VERIFIED' | 'UNDER_REVIEW' | 'LIMITED_ACCESS' | 'HIGH_RISK' | 'BLOCKED' | null }
+      company?: { fraudPublicFlag?: 'VERIFIED' | 'UNDER_REVIEW' | 'LIMITED_ACCESS' | 'HIGH_RISK' | 'BLOCKED' | null; name?: string | null }
+    }>('/me/fraud-status'),
+    enabled: isAuth && isSupplier,
     staleTime: 60 * 1000,
   })
 
@@ -207,6 +217,10 @@ export default function SupplierDashboardLayout({ children }: { children: React.
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{user?.firstName} {user?.lastName}</p>
               <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <TrustBadge flag={fraudStatusData?.data?.user?.fraudPublicFlag || null} />
+                <TrustBadge flag={fraudStatusData?.data?.company?.fraudPublicFlag || null} />
+              </div>
             </div>
           </div>
           <button

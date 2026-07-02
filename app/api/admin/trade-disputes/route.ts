@@ -2,9 +2,12 @@ import { NextRequest } from 'next/server'
 import { DisputeStatus } from '@prisma/client'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAdmin } from '@/lib/permissions'
+import { ApiError, requireAdmin } from '@/lib/permissions'
 import { createNotification } from '@/server/services/notification'
 import { getPaginationParams, handleApiError, paginationMeta, successResponse } from '@/lib/utils/api'
+import { calculateTradeOrderFinancialBreakdown } from '@/lib/finance/service-fees'
+import { settleTradeCommission } from '@/lib/commerce/revenue'
+import { reverseLedgerEntry } from '@/lib/payment/safety'
 
 const resolveDisputeSchema = z.object({
   disputeId: z.string(),
@@ -52,13 +55,37 @@ export async function PATCH(req: NextRequest) {
       where: { id: data.disputeId },
       include: { tradeOrder: true, escrowAccount: true },
     })
-    if (!dispute) throw new Error('Dispute not found')
+    if (!dispute) throw new ApiError(404, 'Dispute not found')
+
+    const breakdown = calculateTradeOrderFinancialBreakdown({
+      subtotal: Number(dispute.tradeOrder.subtotal),
+      shippingCost: Number(dispute.tradeOrder.shippingCost),
+      escrowFee: Number(dispute.tradeOrder.escrowFee),
+      platformCommissionAmount: Number(dispute.tradeOrder.platformCommissionAmount),
+    })
+    const amountHeld = Number(dispute.escrowAccount.amountHeld)
+
+    if (data.resolution === 'PARTIAL_REFUND') {
+      if (data.refundAmount == null || data.refundAmount <= 0) {
+        throw new ApiError(422, 'Partial refund amount is required')
+      }
+      if (data.refundAmount >= amountHeld) {
+        throw new ApiError(422, 'Partial refund amount must be smaller than the total escrow amount')
+      }
+    }
 
     const refundAmount =
       data.resolution === 'BUYER_REFUND'
-        ? Number(dispute.escrowAccount.amountHeld)
+        ? amountHeld
         : data.resolution === 'PARTIAL_REFUND'
           ? data.refundAmount || 0
+          : 0
+
+    const amountReleased =
+      data.resolution === 'SUPPLIER_RELEASE'
+        ? breakdown.supplierNetReceivable
+        : data.resolution === 'PARTIAL_REFUND'
+          ? Math.max(0, Math.min(breakdown.supplierNetReceivable, amountHeld - refundAmount))
           : 0
 
     const disputeStatus =
@@ -71,14 +98,14 @@ export async function PATCH(req: NextRequest) {
             : 'REJECTED'
 
     const escrowStatus =
-      data.resolution === 'SUPPLIER_RELEASE'
+      data.resolution === 'SUPPLIER_RELEASE' || data.resolution === 'PARTIAL_REFUND'
         ? 'RELEASED'
         : data.resolution === 'REJECT'
           ? 'HELD'
           : 'REFUNDED'
 
     const orderStatus =
-      data.resolution === 'SUPPLIER_RELEASE'
+      data.resolution === 'SUPPLIER_RELEASE' || data.resolution === 'PARTIAL_REFUND'
         ? 'COMPLETED'
         : data.resolution === 'REJECT'
           ? 'ESCROW_FUNDED'
@@ -100,12 +127,29 @@ export async function PATCH(req: NextRequest) {
         where: { id: dispute.escrowId },
         data: {
           status: escrowStatus,
-          amountReleased: data.resolution === 'SUPPLIER_RELEASE' ? dispute.escrowAccount.amountHeld : dispute.escrowAccount.amountReleased,
+          amountReleased,
           amountRefunded: refundAmount,
-          releasedAt: data.resolution === 'SUPPLIER_RELEASE' ? new Date() : dispute.escrowAccount.releasedAt,
-          refundedAt: escrowStatus === 'REFUNDED' ? new Date() : dispute.escrowAccount.refundedAt,
+          releasedAt: ['SUPPLIER_RELEASE', 'PARTIAL_REFUND'].includes(data.resolution) ? new Date() : dispute.escrowAccount.releasedAt,
+          refundedAt: ['BUYER_REFUND', 'PARTIAL_REFUND'].includes(data.resolution) ? new Date() : dispute.escrowAccount.refundedAt,
         },
       })
+
+      if (data.resolution !== 'REJECT') {
+        await tx.escrowTransaction.create({
+          data: {
+            escrowAccountId: dispute.escrowId,
+            tradeOrderId: dispute.tradeOrderId,
+            paymentId: dispute.escrowAccount.paymentId ?? undefined,
+            type: data.resolution,
+            amount: data.resolution === 'BUYER_REFUND' ? refundAmount : amountReleased,
+            feeAmount: 0,
+            supplierPayable: amountReleased,
+            platformProfit: Math.max(0, amountHeld - refundAmount - amountReleased),
+            currency: dispute.escrowAccount.currencyCode,
+            status: 'COMPLETED',
+          },
+        })
+      }
 
       await tx.tradeOrder.update({
         where: { id: dispute.tradeOrderId },
@@ -126,6 +170,27 @@ export async function PATCH(req: NextRequest) {
       message: `Your dispute for ${dispute.tradeOrder.productName} was resolved: ${disputeStatus.replace(/_/g, ' ')}.`,
       data: { disputeId: dispute.id, tradeOrderId: dispute.tradeOrderId, status: disputeStatus },
     })
+
+    if (data.resolution === 'SUPPLIER_RELEASE') {
+      await settleTradeCommission(dispute.tradeOrderId)
+    } else if (['BUYER_REFUND', 'PARTIAL_REFUND'].includes(data.resolution)) {
+      const revenueLedger = await prisma.platformRevenueLedger.findFirst({
+        where: {
+          tradeOrderId: dispute.tradeOrderId,
+          revenueType: 'CREDIT',
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      if (revenueLedger) {
+        await reverseLedgerEntry({
+          originalLedgerId: revenueLedger.id,
+          createdById: admin.userId,
+          paymentId: dispute.escrowAccount.paymentId ?? null,
+          reason: data.resolutionNotes || `${data.resolution} dispute resolution`,
+        })
+      }
+    }
 
     return successResponse(updated, 'Dispute resolved')
   } catch (error) {

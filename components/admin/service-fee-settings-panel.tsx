@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { get, post, put } from '@/lib/utils/api-client'
@@ -33,42 +33,19 @@ type ResponsePayload = {
   items: ServiceFeeSetting[]
 }
 
-type ServiceFeeForm = {
-  id: string
-  code: string
-  name: string
-  categoryId: string
+type FeeDraft = {
   feeType: 'PERCENTAGE' | 'FIXED' | 'FREE'
   feeValue: number
-  minFee: string
-  maxFee: string
-  currency: string
-  appliesTo: string
   isActive: boolean
-  description: string
-}
-
-const emptyForm: ServiceFeeForm = {
-  id: '',
-  code: '',
-  name: '',
-  categoryId: '',
-  feeType: 'PERCENTAGE' as const,
-  feeValue: 0,
-  minFee: '',
-  maxFee: '',
-  currency: 'USD',
-  appliesTo: '',
-  isActive: true,
-  description: '',
 }
 
 export function ServiceFeeSettingsPanel() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL')
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
-  const [saving, setSaving] = useState(false)
+  const [drafts, setDrafts] = useState<Record<string, FeeDraft>>({})
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [savingId, setSavingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
-  const [form, setForm] = useState<ServiceFeeForm>(emptyForm)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['admin-service-fees', statusFilter, categoryFilter],
@@ -82,52 +59,69 @@ export function ServiceFeeSettingsPanel() {
   const categories = payload?.categories || []
   const items = payload?.items || []
 
-  const filteredItems = useMemo(() => items, [items])
+  useEffect(() => {
+    const nextDrafts: Record<string, FeeDraft> = {}
+    for (const item of items) {
+      nextDrafts[item.id] = {
+        feeType: item.feeType,
+        feeValue: item.feeValue,
+        isActive: item.isActive,
+      }
+    }
+    setDrafts(nextDrafts)
+  }, [items])
 
-  function startEdit(item: ServiceFeeSetting) {
-    setForm({
-      id: item.id,
-      code: item.code,
-      name: item.name,
-      categoryId: item.categoryId,
-      feeType: item.feeType,
-      feeValue: item.feeValue,
-      minFee: item.minFee == null ? '' : String(item.minFee),
-      maxFee: item.maxFee == null ? '' : String(item.maxFee),
-      currency: item.currency,
-      appliesTo: item.appliesTo,
-      isActive: item.isActive,
-      description: item.description || '',
-    })
+  function updateDraft(id: string, value: Partial<FeeDraft>) {
+    setDrafts((current) => ({
+      ...current,
+      [id]: {
+        ...current[id],
+        ...value,
+      },
+    }))
   }
 
-  async function save() {
-    setSaving(true)
+  async function saveItem(item: ServiceFeeSetting) {
+    const draft = drafts[item.id]
+    if (!draft) return
+
+    setSavingId(item.id)
     try {
       await post('/admin/service-fees', {
-        ...form,
-        minFee: form.minFee === '' ? null : Number(form.minFee),
-        maxFee: form.maxFee === '' ? null : Number(form.maxFee),
-        feeValue: Number(form.feeValue),
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        categoryId: item.categoryId,
+        feeType: draft.feeType,
+        feeValue: Number(draft.feeValue),
+        minFee: item.minFee ?? null,
+        maxFee: item.maxFee ?? null,
+        currency: item.currency,
+        appliesTo: item.appliesTo,
+        isActive: draft.isActive,
+        description: item.description ?? null,
       })
-      toast.success(form.id ? 'Service fee updated' : 'Service fee created')
-      setForm(emptyForm)
+      toast.success(`${item.name} updated`)
+      setEditingId(null)
       refetch()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to save service fee'
       toast.error(message)
     } finally {
-      setSaving(false)
+      setSavingId(null)
     }
   }
 
   async function toggle(item: ServiceFeeSetting) {
+    const nextActive = !(drafts[item.id]?.isActive ?? item.isActive)
+    updateDraft(item.id, { isActive: nextActive })
     setTogglingId(item.id)
     try {
-      await put('/admin/service-fees', { id: item.id, isActive: !item.isActive })
-      toast.success(item.isActive ? 'Service fee disabled' : 'Service fee enabled')
+      await put('/admin/service-fees', { id: item.id, isActive: nextActive })
+      toast.success(nextActive ? 'Service fee enabled' : 'Service fee disabled')
       refetch()
     } catch (error) {
+      updateDraft(item.id, { isActive: item.isActive })
       const message = error instanceof Error ? error.message : 'Unable to update service fee status'
       toast.error(message)
     } finally {
@@ -142,7 +136,7 @@ export function ServiceFeeSettingsPanel() {
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Settings / Service Fees</h2>
             <p className="mt-1 text-sm text-gray-500">
-              All platform fees are controlled here. Buyers and suppliers only see calculated outputs from these rules.
+              Each fee card can be edited directly from this view. Change the type or amount, then save that section.
             </p>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -161,106 +155,139 @@ export function ServiceFeeSettingsPanel() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.2fr,0.8fr]">
-        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-          <div className="border-b border-gray-100 px-5 py-4">
-            <h3 className="text-base font-semibold text-gray-900">Fee settings</h3>
-          </div>
-          {isLoading ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-blue-700" /></div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-100 text-sm">
-                <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                  <tr>
-                    <th className="px-4 py-3">Fee</th>
-                    <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">Value</th>
-                    <th className="px-4 py-3">Bounds</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {filteredItems.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-gray-900">{item.name}</div>
-                        <div className="text-xs text-gray-500">{item.code} | {item.appliesTo}</div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">{item.category.name}</td>
-                      <td className="px-4 py-3 text-gray-600">{item.feeType}</td>
-                      <td className="px-4 py-3 text-gray-600">
-                        {item.feeType === 'PERCENTAGE' ? `${item.feeValue}%` : `${item.currency} ${item.feeValue}`}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">
-                        Min: {item.minFee ?? '-'} | Max: {item.maxFee ?? '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
-                          {item.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => startEdit(item)} className={secondaryButtonCls}>Edit</button>
-                          <button type="button" onClick={() => void toggle(item)} disabled={togglingId === item.id} className={secondaryButtonCls}>
-                            {togglingId === item.id ? 'Saving...' : item.isActive ? 'Disable' : 'Enable'}
+      <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-4">
+          <h3 className="text-base font-semibold text-gray-900">Fee settings</h3>
+        </div>
+        {isLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-blue-700" /></div>
+        ) : !items.length ? (
+          <div className="px-4 py-8 text-sm text-gray-500">No service fees found.</div>
+        ) : (
+          <div className="grid gap-4 p-4 xl:grid-cols-2">
+            {items.map((item) => {
+              const draft = drafts[item.id] || {
+                feeType: item.feeType,
+                feeValue: item.feeValue,
+                isActive: item.isActive,
+              }
+              const isEditing = editingId === item.id
+
+              return (
+                <article key={item.id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-lg font-semibold text-gray-900">{item.name}</div>
+                      <div className="mt-1 text-xs text-gray-500">{item.code} | {item.appliesTo}</div>
+                    </div>
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${draft.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {draft.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                      <div className="text-xs uppercase tracking-wide text-gray-500">Category</div>
+                      <div className="mt-1 text-sm font-medium text-gray-900">{item.category.name}</div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                      <div className="text-xs uppercase tracking-wide text-gray-500">Status</div>
+                      <button
+                        type="button"
+                        onClick={() => void toggle(item)}
+                        disabled={togglingId === item.id}
+                        className="mt-1 text-sm font-medium text-blue-700 disabled:opacity-60"
+                      >
+                        {togglingId === item.id ? 'Saving...' : draft.isActive ? 'Disable' : 'Enable'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="sm:col-span-2 rounded-xl border border-gray-200 bg-white p-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                      <label className="mb-1 block text-xs uppercase tracking-wide text-gray-500">Fee type</label>
+                      {isEditing ? (
+                        <select
+                          value={draft.feeType}
+                          onChange={(e) => updateDraft(item.id, { feeType: e.target.value as FeeDraft['feeType'] })}
+                          className={inputCls}
+                        >
+                          <option value="PERCENTAGE">Percentage</option>
+                          <option value="FIXED">Fixed</option>
+                          <option value="FREE">Free</option>
+                        </select>
+                      ) : (
+                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900">
+                          {draft.feeType === 'PERCENTAGE' ? 'Percentage' : draft.feeType === 'FIXED' ? 'Fixed' : 'Free'}
+                        </div>
+                      )}
+                        </div>
+                        <div>
+                      <label className="mb-1 block text-xs uppercase tracking-wide text-gray-500">
+                        {draft.feeType === 'PERCENTAGE' ? 'Percentage amount' : 'Fixed amount'}
+                      </label>
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={draft.feeValue}
+                          onChange={(e) => updateDraft(item.id, { feeValue: Number(e.target.value) })}
+                          className={inputCls}
+                        />
+                      ) : (
+                        <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900">
+                          {draft.feeType === 'FREE' ? '0' : draft.feeValue} {draft.feeType === 'PERCENTAGE' ? '%' : item.currency}
+                        </div>
+                      )}
+                        </div>
+                      </div>
+
+                      {isEditing ? (
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(null)}
+                            className={secondaryButtonCls}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void saveItem(item)}
+                            disabled={savingId === item.id}
+                            className={primaryButtonCls}
+                          >
+                            {savingId === item.id ? 'Saving...' : 'Save'}
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!filteredItems.length ? <div className="px-4 py-8 text-sm text-gray-500">No service fees found.</div> : null}
-            </div>
-          )}
-        </div>
+                      ) : null}
+                    </div>
+                  </div>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-900">{form.id ? 'Edit fee' : 'Create fee'}</h3>
-          <div className="mt-4 grid gap-3">
-            <input value={form.code} onChange={(e) => setForm((current) => ({ ...current, code: e.target.value }))} placeholder="Code" className={inputCls} />
-            <input value={form.name} onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))} placeholder="Name" className={inputCls} />
-            <select value={form.categoryId} onChange={(e) => setForm((current) => ({ ...current, categoryId: e.target.value }))} className={inputCls}>
-              <option value="">Select category</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>{category.name}</option>
-              ))}
-            </select>
-            <div className="grid gap-3 md:grid-cols-2">
-              <select value={form.feeType} onChange={(e) => setForm((current) => ({ ...current, feeType: e.target.value as typeof form.feeType }))} className={inputCls}>
-                <option value="PERCENTAGE">Percentage</option>
-                <option value="FIXED">Fixed</option>
-                <option value="FREE">Free</option>
-              </select>
-              <input type="number" value={form.feeValue} onChange={(e) => setForm((current) => ({ ...current, feeValue: Number(e.target.value) }))} placeholder="Fee value" className={inputCls} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <input value={form.minFee} onChange={(e) => setForm((current) => ({ ...current, minFee: e.target.value }))} placeholder="Minimum fee" className={inputCls} />
-              <input value={form.maxFee} onChange={(e) => setForm((current) => ({ ...current, maxFee: e.target.value }))} placeholder="Maximum fee" className={inputCls} />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <input value={form.currency} onChange={(e) => setForm((current) => ({ ...current, currency: e.target.value.toUpperCase() }))} placeholder="Currency" className={inputCls} />
-              <input value={form.appliesTo} onChange={(e) => setForm((current) => ({ ...current, appliesTo: e.target.value }))} placeholder="Applies to" className={inputCls} />
-            </div>
-            <textarea value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} placeholder="Description" rows={4} className={inputCls} />
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((current) => ({ ...current, isActive: e.target.checked }))} />
-              Active
-            </label>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => void save()} disabled={saving} className={primaryButtonCls}>
-                {saving ? 'Saving...' : form.id ? 'Update fee' : 'Create fee'}
-              </button>
-              {form.id ? (
-                <button type="button" onClick={() => setForm(emptyForm)} className={secondaryButtonCls}>Cancel</button>
-              ) : null}
-            </div>
+                  {item.description ? (
+                    <p className="mt-4 text-sm text-gray-600">{item.description}</p>
+                  ) : null}
+
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <div className="text-sm text-gray-500">
+                      {draft.feeType === 'PERCENTAGE' ? '%' : item.currency}
+                    </div>
+                    {!isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(item.id)}
+                        className={secondaryButtonCls}
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              )
+            })}
           </div>
-        </section>
+        )}
       </section>
     </div>
   )
@@ -268,4 +295,4 @@ export function ServiceFeeSettingsPanel() {
 
 const inputCls = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900'
 const primaryButtonCls = 'rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60'
-const secondaryButtonCls = 'rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 disabled:opacity-60'
+const secondaryButtonCls = 'rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-60'

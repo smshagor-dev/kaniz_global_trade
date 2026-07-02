@@ -28,6 +28,7 @@ const createCatalogSchema = z.object({
   isFeatured: z.boolean().default(false),
   isVerified: z.boolean().default(false),
   images: z.array(z.object({ url: z.string().url(), isPrimary: z.boolean().optional().default(false), alt: z.string().optional() })).optional(),
+  documents: z.array(z.object({ name: z.string().min(1), url: z.string().url(), type: z.string().optional() })).optional(),
   specifications: z.array(z.object({ key: z.string().min(1), value: z.string().min(1), unit: z.string().optional() })).optional(),
 })
 
@@ -131,6 +132,15 @@ export async function POST(req: NextRequest) {
                 value: specification.value,
                 unit: specification.unit,
                 sortOrder: index,
+              })),
+            }
+          : undefined,
+        documents: data.documents?.length
+          ? {
+              create: data.documents.map((document) => ({
+                name: document.name,
+                url: document.url,
+                type: document.type,
               })),
             }
           : undefined,

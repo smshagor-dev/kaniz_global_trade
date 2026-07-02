@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, ROLES, ApiError, isAdmin, isSupplier } from '@/lib/permissions'
+import { requireAuth, ROLES, ApiError, isAdmin, isSupplier, assertComplianceAccess } from '@/lib/permissions'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { ensureServicePartnersSeeded, getDefaultPartner } from '@/lib/partners/server'
 import { createNotification } from '@/server/services/notification'
@@ -191,6 +191,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (!companyId) throw new ApiError(422, 'Company required')
+    if (!isAdmin(authUser)) {
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'SUPPLIER',
+        companyId,
+      })
+    }
     if (data.startsAt && Number.isNaN(new Date(data.startsAt).getTime())) throw new ApiError(422, 'Invalid coverage start date')
     if (data.endsAt && Number.isNaN(new Date(data.endsAt).getTime())) throw new ApiError(422, 'Invalid coverage end date')
     if (data.startsAt && data.endsAt && new Date(data.startsAt) > new Date(data.endsAt)) {

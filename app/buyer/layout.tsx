@@ -3,22 +3,23 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useIsAuthenticated, useIsBuyer, useIsAdmin, useCurrentUser, useAuthStore } from '@/store/auth'
-import { post } from '@/lib/utils/api-client'
+import { get, post } from '@/lib/utils/api-client'
 import toast from 'react-hot-toast'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { CurrencySelector } from '@/components/currency/currency-selector'
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown'
+import { TrustBadge } from '@/components/public/trust-badge'
 import {
   LayoutDashboard, MessageSquare, FileText, Quote,
   Heart, Star, Bell, Settings, LogOut, Globe2,
-  ChevronRight, Search, ShoppingCart, ShieldCheck, Truck, PackageCheck, Sparkles, BadgeCheck, Shield, BadgeDollarSign,
+  ChevronRight, Search, ShoppingCart, ShieldCheck, Truck, PackageCheck, Sparkles, BadgeCheck, Shield, BadgeDollarSign, Building2,
 } from 'lucide-react'
 
 const navItems = [
   { href: '/buyer',              icon: LayoutDashboard, label: 'Overview' },
-  { href: '/buyer/verification', icon: ShieldCheck,     label: 'Buyer Verification' },
+  { href: '/buyer/b2b/company',  icon: Building2,       label: 'Buyer Company' },
   { href: '/buyer/kyc',          icon: BadgeCheck,      label: 'KYC Compliance' },
   { href: '/buyer/ai-matches',   icon: Sparkles,        label: 'AI Matches' },
   { href: '/buyer/trade-orders', icon: ShoppingCart,    label: 'Trade Assurance' },
@@ -48,6 +49,11 @@ export default function BuyerDashboardLayout({ children }: { children: React.Rea
   const isAdmin   = useIsAdmin()
   const user      = useCurrentUser()
   const { clearAuth, refreshToken } = useAuthStore()
+  const { data: fraudStatus } = useQuery({
+    queryKey: ['me-fraud-status', 'buyer'],
+    queryFn: () => get<{ user?: { fraudPublicFlag?: 'VERIFIED' | 'UNDER_REVIEW' | 'LIMITED_ACCESS' | 'HIGH_RISK' | 'BLOCKED' | null } }>('/me/fraud-status'),
+    enabled: isAuth,
+  })
 
   useEffect(() => {
     if (!isAuth) router.push('/auth/login?redirect=/buyer')
@@ -97,6 +103,9 @@ export default function BuyerDashboardLayout({ children }: { children: React.Rea
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{user?.firstName} {user?.lastName}</p>
               <p className="text-xs text-gray-500">Buyer</p>
+              <div className="mt-1">
+                <TrustBadge flag={fraudStatus?.data?.user?.fraudPublicFlag || null} />
+              </div>
             </div>
           </div>
           <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 w-full text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors">

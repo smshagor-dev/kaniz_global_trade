@@ -20,7 +20,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const { page, limit, skip } = getPaginationParams(searchParams)
     const status = (searchParams.get('status') as KYCStatus | null) || undefined
-    const where = status ? { status } : {}
+    const userId = searchParams.get('userId') || undefined
+    const where: Record<string, unknown> = {}
+
+    if (status) where.status = status
+    if (userId) where.userId = userId
 
     const [records, total] = await Promise.all([
       prisma.kYCProfile.findMany({

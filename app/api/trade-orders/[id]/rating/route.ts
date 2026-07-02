@@ -36,7 +36,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const authUser = await requireAuth(req)
     const { id } = await params
     const data = schema.parse(await req.json())
-    const order = await prisma.tradeOrder.findUnique({ where: { id } })
+    const order = await prisma.tradeOrder.findUnique({
+      where: { id },
+      include: {
+        quotation: {
+          select: {
+            inquiry: {
+              select: {
+                productId: true,
+              },
+            },
+          },
+        },
+      },
+    })
     if (!order) throw new ApiError(404, 'Trade order not found')
     const isBuyer = order.buyerId === authUser.userId
     const isSupplier = authUser.companyId === order.supplierCompanyId
@@ -66,6 +79,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         deliveryRating: data.deliveryRating,
         title: data.title,
         comment: data.comment,
+        productId: isBuyer ? order.quotation.inquiry?.productId || null : null,
         ...recipient,
       },
     })

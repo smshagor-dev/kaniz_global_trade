@@ -42,7 +42,19 @@ export async function GET(req: NextRequest) {
         { lastName: { contains: search } },
       ]
     }
-    if (role) {
+    if (role === 'SUPPLIER') {
+      where.roles = {
+        some: {
+          role: {
+            name: {
+              in: ['SUPPLIER_OWNER', 'SUPPLIER_STAFF'],
+            },
+          },
+        },
+      }
+    } else if (role === 'BUYER') {
+      where.roles = { some: { role: { name: 'BUYER' } } }
+    } else if (role) {
       where.roles = { some: { role: { name: role } } }
     }
 
@@ -66,6 +78,22 @@ export async function GET(req: NextRequest) {
           updatedAt: true,
           roles: { include: { role: { select: { name: true } } } },
           companyUsers: { select: { company: { select: { id: true, name: true } } } },
+          kycProfile: {
+            select: {
+              id: true,
+              status: true,
+              reviewedAt: true,
+            },
+          },
+          b2bCompanyOwned: {
+            select: {
+              id: true,
+              companyName: true,
+              companyType: true,
+              buyerVerificationStatus: true,
+              supplierVerificationStatus: true,
+            },
+          },
         },
       }),
       prisma.user.count({ where }),

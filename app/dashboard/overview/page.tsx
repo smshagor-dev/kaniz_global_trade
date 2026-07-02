@@ -36,6 +36,7 @@ import {
 } from 'lucide-react'
 
 interface DashboardOverviewResponse {
+  generatedAt: string
   company: {
     id: string
     name: string
@@ -77,6 +78,10 @@ interface DashboardOverviewResponse {
     quotationStatus: Array<{ name: string; value: number }>
     tradeOrders: Array<{ name: string; value: number }>
     samples: Array<{ name: string; value: number }>
+    shipments: Array<{ name: string; value: number }>
+    logistics: Array<{ name: string; value: number }>
+    insurance: Array<{ name: string; value: number }>
+    claims: Array<{ name: string; value: number }>
   }
   topProducts: Array<{ id: string; name: string; slug: string; totalViews: number; totalInquiries: number; images: Array<{ url: string }> }>
   recent: {
@@ -84,6 +89,10 @@ interface DashboardOverviewResponse {
     tradeOrders: Array<{ id: string; productName: string; status: string; totalAmount: number; currencyCode: string; createdAt: string }>
     sampleOrders: Array<{ id: string; title: string; status: string; totalAmount: number; currencyCode: string; createdAt: string }>
     payments: Array<{ id: string; method: string; amount: number; currency: string; status: string; createdAt: string; label: string }>
+    shipments: Array<{ id: string; carrier: string; trackingNumber: string; trackingUrl?: string | null; status: string; lastEvent?: string | null; lastLocation?: string | null; estimatedDeliveryAt?: string | null; lastSyncedAt?: string | null; tradeOrder?: { productName: string } | null; sampleOrder?: { title: string } | null }>
+    logistics: Array<{ id: string; providerName: string; serviceMode: string; origin: string; destination: string; status: string; trackingNumber?: string | null; estimatedDeliveryAt?: string | null; updatedAt: string; statusLabel: string }>
+    insurancePolicies: Array<{ id: string; providerName: string; policyType: string; status: string; insuredAmount: number; premiumAmount: number; currencyCode: string; endsAt?: string | null; updatedAt: string }>
+    claims: Array<{ id: string; title: string; status: string; claimAmount: number; currencyCode: string; updatedAt: string; policy: { providerName: string; policyType: string } }>
   }
 }
 
@@ -100,12 +109,19 @@ function formatVerificationStatus(status: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
+function formatStatus(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 export default function DashboardOverviewPage() {
   const { user } = useAuthStore()
   const { data, isLoading } = useQuery({
     queryKey: ['supplier-dashboard-overview'],
     queryFn: () => get<DashboardOverviewResponse>('/dashboard/overview'),
-    refetchInterval: 60000,
+    refetchInterval: 30000,
   })
 
   const dashboard = data?.data
@@ -155,6 +171,7 @@ export default function DashboardOverviewPage() {
               {dashboard.company.subscription && <span className="rounded-full bg-sky-500/20 px-3 py-1 text-sky-100">{dashboard.company.subscription.plan.name}</span>}
               {dashboard.company.isPremium && <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-emerald-100">Premium</span>}
               {dashboard.company.creditProfile?.score != null && <span className="rounded-full bg-amber-500/20 px-3 py-1 text-amber-100">Credit Score {dashboard.company.creditProfile.score}</span>}
+              <span className="rounded-full bg-white/10 px-3 py-1">Live as of {new Date(dashboard.generatedAt).toLocaleTimeString()}</span>
             </div>
           </div>
 
@@ -293,6 +310,53 @@ export default function DashboardOverviewPage() {
         </div>
       </section>
 
+      <section className="grid gap-6 xl:grid-cols-3">
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-gray-900">Shipment Status</h2>
+          <div className="mt-4 h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboard.charts.shipments}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-gray-900">Logistics Status</h2>
+          <div className="mt-4 h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboard.charts.logistics}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#14b8a6" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-gray-900">Insurance & Claims</h2>
+          <div className="mt-4 h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={[...dashboard.charts.insurance, ...dashboard.charts.claims]}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#edf2f7" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[1.1fr_1fr_1fr]">
         <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
@@ -401,6 +465,74 @@ export default function DashboardOverviewPage() {
                 </div>
                 <p className="text-sm font-bold text-gray-900"><CurrencyAmount amount={order.totalAmount} currencyCode={order.currencyCode} showCode /></p>
               </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-4">
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900">Shipment Tracking</h2>
+            <Link href="/dashboard/shipments" className="text-sm font-medium text-blue-700">All shipments</Link>
+          </div>
+          <div className="space-y-3">
+            {dashboard.recent.shipments.map((shipment) => (
+              <div key={shipment.id} className="rounded-2xl border border-gray-100 p-3">
+                <p className="text-sm font-semibold text-gray-900">{shipment.tradeOrder?.productName || shipment.sampleOrder?.title || 'Shipment'}</p>
+                <p className="mt-1 text-xs text-gray-500">{shipment.carrier} • {shipment.trackingNumber}</p>
+                <p className="mt-1 text-xs text-gray-500">{formatStatus(shipment.status)}{shipment.lastLocation ? ` • ${shipment.lastLocation}` : ''}</p>
+                {shipment.lastEvent ? <p className="mt-2 text-xs text-gray-400">{shipment.lastEvent}</p> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900">Logistics Desk</h2>
+            <Link href="/dashboard/logistics" className="text-sm font-medium text-blue-700">Open logistics</Link>
+          </div>
+          <div className="space-y-3">
+            {dashboard.recent.logistics.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-gray-100 p-3">
+                <p className="text-sm font-semibold text-gray-900">{item.providerName} • {item.serviceMode}</p>
+                <p className="mt-1 text-xs text-gray-500">{item.origin} → {item.destination}</p>
+                <p className="mt-1 text-xs text-gray-500">{formatStatus(item.status)}{item.trackingNumber ? ` • ${item.trackingNumber}` : ''}</p>
+                <p className="mt-2 text-xs text-gray-400">Updated {new Date(item.updatedAt).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900">Insurance Desk</h2>
+            <Link href="/dashboard/insurance" className="text-sm font-medium text-blue-700">Open insurance</Link>
+          </div>
+          <div className="space-y-3">
+            {dashboard.recent.insurancePolicies.map((policy) => (
+              <div key={policy.id} className="rounded-2xl border border-gray-100 p-3">
+                <p className="text-sm font-semibold text-gray-900">{policy.providerName} • {policy.policyType}</p>
+                <p className="mt-1 text-xs text-gray-500"><CurrencyAmount amount={policy.insuredAmount} currencyCode={policy.currencyCode} showCode /> protected</p>
+                <p className="mt-1 text-xs text-gray-500">{formatStatus(policy.status)}{policy.endsAt ? ` • Ends ${new Date(policy.endsAt).toLocaleDateString()}` : ''}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-900">Claim Tracking</h2>
+            <Link href="/dashboard/insurance" className="text-sm font-medium text-blue-700">Claim view</Link>
+          </div>
+          <div className="space-y-3">
+            {dashboard.recent.claims.map((claim) => (
+              <div key={claim.id} className="rounded-2xl border border-gray-100 p-3">
+                <p className="text-sm font-semibold text-gray-900">{claim.title}</p>
+                <p className="mt-1 text-xs text-gray-500">{claim.policy.providerName} • {claim.policy.policyType}</p>
+                <p className="mt-1 text-xs text-gray-500"><CurrencyAmount amount={claim.claimAmount} currencyCode={claim.currencyCode} showCode /> • {formatStatus(claim.status)}</p>
+              </div>
             ))}
           </div>
         </div>

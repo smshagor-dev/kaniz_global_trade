@@ -4,6 +4,7 @@ import prisma from '@/lib/db/prisma'
 import { requireAdmin, ApiError } from '@/lib/permissions'
 import { sendInvoicePaidEmail } from '@/lib/email'
 import { createNotification } from '@/server/services/notification'
+import { logApprove, logReject } from '@/lib/utils/audit'
 import { getPaginationParams, handleApiError, paginationMeta, successResponse } from '@/lib/utils/api'
 
 const reviewSchema = z.object({
@@ -83,6 +84,7 @@ export async function PATCH(req: NextRequest) {
     })
 
     if (data.status !== 'PAID') {
+      await logReject(admin.userId, 'admin/manual-payments', 'ManualPaymentRequest', updatedRequest.id, data.reviewNotes || data.status)
       await createNotification({
         userId: owner.userId,
         type: 'PAYMENT_FAILED',
@@ -159,6 +161,8 @@ export async function PATCH(req: NextRequest) {
         }),
       },
     })
+
+    await logApprove(admin.userId, 'admin/manual-payments', 'ManualPaymentRequest', updatedRequest.id)
 
     await createNotification({
       userId: owner.userId,

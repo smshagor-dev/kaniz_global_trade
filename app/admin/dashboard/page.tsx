@@ -20,7 +20,7 @@ interface AdminStats {
     pendingVerification: number; totalRFQs: number; totalInquiries: number
     pendingReports: number; activeSubscriptions: number; newUsersToday: number
     newCompaniesMonth: number; revenueMonth: number
-    pendingBuyerVerifications: number; pendingKyc: number; openFraudAlerts: number
+    pendingKyc: number; openFraudAlerts: number
     inspectionReports: number; tradeOrders: number; sampleOrders: number; activeShipments: number
     openInsuranceClaims: number; openFinancingRequests: number; commissionRevenue: number
     paidInvoicesMonth: number; pendingManualPayments: number
@@ -50,7 +50,6 @@ export default function AdminDashboardPage() {
     { label: 'Trade Orders',      value: stats.overview.tradeOrders.toLocaleString(),      icon: FileText,    color: 'orange', href: '/admin/trade-orders', change: `${stats.overview.sampleOrders} sample orders` },
     { label: 'Open Fraud Alerts', value: stats.overview.openFraudAlerts.toLocaleString(),  icon: Flag,        color: 'red',    href: '/admin/fraud-alerts', change: `${stats.overview.pendingKyc} KYC reviews` },
     { label: 'Inspections',       value: stats.overview.inspectionReports.toLocaleString(), icon: Shield,     color: 'purple', href: '/admin/inspections', change: `${stats.overview.activeShipments} active shipments` },
-    { label: 'Buyer Verification', value: stats.overview.pendingBuyerVerifications.toLocaleString(), icon: CreditCard, color: 'emerald', href: '/admin/buyer-verifications', change: 'Awaiting review' },
     { label: 'Commission Revenue', value: `$${stats.overview.commissionRevenue.toLocaleString()}`, icon: TrendingUp, color: 'teal', href: '/admin/commissions', change: `${stats.overview.openFinancingRequests} financing requests` },
     { label: 'Paid Invoices', value: stats.overview.paidInvoicesMonth.toLocaleString(), icon: CreditCard, color: 'blue', href: '/admin/payments', change: `${stats.overview.pendingManualPayments} manual pending` },
     ] : []
