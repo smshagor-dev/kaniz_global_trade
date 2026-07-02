@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { get, post } from '@/lib/utils/api-client'
-import { CreditCard, Loader2 } from 'lucide-react'
+import { CreditCard, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 interface BillingData {
@@ -36,15 +36,6 @@ export default function DashboardPackageCheckoutPage() {
   const planId = searchParams.get('planId') || ''
   const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'YEARLY'>(initialCycle)
   const [activeProvider, setActiveProvider] = useState<string | null>(null)
-  const [paymentForm, setPaymentForm] = useState({
-    cardholderName: '',
-    cardNumber: '',
-    expiryDate: '',
-    cvv: '',
-    email: '',
-    phone: '',
-    country: '',
-  })
 
   const { data, isLoading } = useQuery({
     queryKey: ['billing-overview', 'package-checkout'],
@@ -210,84 +201,41 @@ export default function DashboardPackageCheckoutPage() {
                   </div>
 
                   <div className="space-y-5 p-5">
-                  {activePaymentMethod?.key === 'STRIPE' ? (
-                    <div className="space-y-5">
-                      <Field label="Cardholder Name" hint="Use the exact name printed on the card.">
-                        <input
-                          value={paymentForm.cardholderName}
-                          onChange={(event) => setPaymentForm((current) => ({ ...current, cardholderName: event.target.value }))}
-                          placeholder="Name on card"
-                          className={inputCls}
-                        />
-                      </Field>
-                      <Field label="Card Number" hint="Your provider will securely confirm the card after redirect.">
-                        <input
-                          value={paymentForm.cardNumber}
-                          onChange={(event) => setPaymentForm((current) => ({ ...current, cardNumber: event.target.value }))}
-                          placeholder="**** **** **** 1111"
-                          className={inputCls}
-                        />
-                      </Field>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Expiry Date">
-                          <input
-                            value={paymentForm.expiryDate}
-                            onChange={(event) => setPaymentForm((current) => ({ ...current, expiryDate: event.target.value }))}
-                            placeholder="12 / 29"
-                            className={inputCls}
-                          />
-                        </Field>
-                        <Field label="CVV" hint="3 or 4 digits">
-                          <input
-                            value={paymentForm.cvv}
-                            onChange={(event) => setPaymentForm((current) => ({ ...current, cvv: event.target.value }))}
-                            placeholder="CVV"
-                            className={inputCls}
-                          />
-                        </Field>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                          <ShieldCheck className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">Provider-hosted checkout</p>
+                          <p className="mt-1 text-sm leading-6 text-slate-600">
+                            Card, wallet, bank, or crypto details are collected only on the secure {activePaymentMethod?.label || 'payment provider'} page after redirect.
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="space-y-5">
-                      <Field label="Full Name" hint="This helps match the payment with your company account.">
-                        <input
-                          value={paymentForm.cardholderName}
-                          onChange={(event) => setPaymentForm((current) => ({ ...current, cardholderName: event.target.value }))}
-                          placeholder="Your full name"
-                          className={inputCls}
-                        />
-                      </Field>
-                      <Field label="E-mail">
-                        <input
-                          value={paymentForm.email}
-                          onChange={(event) => setPaymentForm((current) => ({ ...current, email: event.target.value }))}
-                          placeholder="you@company.com"
-                          className={inputCls}
-                        />
-                      </Field>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Phone">
-                          <input
-                            value={paymentForm.phone}
-                            onChange={(event) => setPaymentForm((current) => ({ ...current, phone: event.target.value }))}
-                            placeholder="+8801..."
-                            className={inputCls}
-                          />
-                        </Field>
-                        <Field label="Country">
-                          <input
-                            value={paymentForm.country}
-                            onChange={(event) => setPaymentForm((current) => ({ ...current, country: event.target.value }))}
-                            placeholder="Bangladesh"
-                            className={inputCls}
-                          />
-                        </Field>
-                      </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <InfoCard
+                        label="Billing company"
+                        value={company.name}
+                        hint="This package will be applied to the primary supplier company on your account."
+                      />
+                      <InfoCard
+                        label="Gateway environment"
+                        value={
+                          activePaymentMethod?.mode === 'sandbox'
+                            ? 'Sandbox'
+                            : activePaymentMethod?.mode === 'live'
+                              ? 'Live'
+                              : activePaymentMethod?.mode || 'Offline'
+                        }
+                        hint="Use sandbox mode only for test credentials and callback verification."
+                      />
                     </div>
-                  )}
 
                     <div className="rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm leading-6 text-sky-800">
-                      Final payment confirmation will continue in the selected provider checkout screen after you click continue.
+                      Final payment confirmation continues in the hosted checkout window after you click continue. No raw card data is collected on this page.
                     </div>
                   </div>
                 </div>
@@ -300,6 +248,7 @@ export default function DashboardPackageCheckoutPage() {
               >
                 {subscribeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Continue Payment
+                <ExternalLink className="ml-2 h-4 w-4" />
               </button>
 
               <div className="border-t border-slate-200 pt-4 text-center text-sm text-slate-500">
@@ -371,17 +320,12 @@ function getProviderIconClass(provider: string) {
   return 'bg-slate-100 text-slate-700'
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function InfoCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <label className="block">
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <span className="block text-sm font-medium text-slate-800">{label}</span>
-        {hint ? <span className="text-xs text-slate-400">{hint}</span> : null}
-      </div>
-      {children}
-    </label>
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-slate-950">{value}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-500">{hint}</p>
+    </div>
   )
 }
-
-const inputCls =
-  'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100'

@@ -17,6 +17,7 @@ import { createOneTimeCheckoutSession, createStripeCustomer } from '@/lib/paymen
 import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
 import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
 import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
+import { buildAppUrl, resolveAppUrl } from '@/lib/payment/urls'
 
 const createSchema = z.object({
   productId: z.string().optional(),
@@ -121,7 +122,7 @@ async function createCampaignCheckout(params: {
     })
 
     try {
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/sslcommerz/callback`
+      const callbackUrl = buildAppUrl('/api/payments/sslcommerz/callback')
       const checkout = await createSSLCommerzSession({
         amount,
         currency: 'USD',
@@ -184,7 +185,7 @@ async function createCampaignCheckout(params: {
     })
 
     try {
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/aamarpay/callback`
+      const callbackUrl = buildAppUrl('/api/payments/aamarpay/callback')
       const checkout = await createAamarPaySession({
         amount,
         currency: 'USD',
@@ -243,7 +244,7 @@ async function createCampaignCheckout(params: {
       description: `${params.campaign.title} advertising campaign`,
       successUrl: getAdPaymentReturnUrl('success', 'nowpayments', params.campaign.id),
       cancelUrl: getAdPaymentReturnUrl('cancelled', 'nowpayments', params.campaign.id),
-      ipnCallbackUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/nowpayments/callback`,
+      ipnCallbackUrl: `${resolveAppUrl()}/api/payments/nowpayments/callback`,
     })
 
     return { checkoutUrl: checkout.url }

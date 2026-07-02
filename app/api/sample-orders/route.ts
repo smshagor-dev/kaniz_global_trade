@@ -1,14 +1,18 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
+import { requireAuth, ROLES, ApiError, assertComplianceAccess } from '@/lib/permissions'
 import { createNotification } from '@/server/services/notification'
 import { getPaginationParams, handleApiError, paginationMeta, successResponse } from '@/lib/utils/api'
 import { createOneTimeCheckoutSession, createStripeCustomer } from '@/lib/payment/stripe'
 import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
 import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
 import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
+import { buildAppUrl, resolveAppUrl } from '@/lib/payment/urls'
 import { FeeCalculationService } from '@/lib/finance/service-fees'
+import { FraudEventType } from '@prisma/client'
+import { assertFraudActionAllowed, screenFraudEvent } from '@/lib/fraud/service'
+import { FRAUD_ACTIONS } from '@/lib/fraud/shared'
 
 const createSampleOrderSchema = z.object({
   productId: z.string().optional(),
@@ -88,6 +92,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (!supplierCompanyId) throw new ApiError(400, 'Supplier company is required')
+    await assertFraudActionAllowed({
+      userId: authUser.userId,
+      companyId: supplierCompanyId,
+      action: FRAUD_ACTIONS.ORDER_CREATE,
+    })
+    if (!authUser.roles.includes(ROLES.SUPER_ADMIN)) {
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'BUYER',
+      })
+    }
     const sampleFeeResult = await feeService.calculateFee('SAMPLE_ORDER_SERVICE_FEE', samplePrice)
     const totalAmount = samplePrice + data.shippingCost + sampleFeeResult.feeAmount
     const platformCommissionAmount = sampleFeeResult.feeAmount
@@ -137,10 +152,30 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    await screenFraudEvent({
+      req,
+      actorUserId: authUser.userId,
+      userId: authUser.userId,
+      companyId: supplierCompanyId,
+      eventType: FraudEventType.ORDER_CREATE,
+      sourceModule: 'sample-orders',
+      title: 'Sample order created',
+      summary: 'Buyer created a new sample order request.',
+      payload: {
+        sampleOrderId: sampleOrder.id,
+        productId: data.productId,
+        supplierCompanyId,
+        paymentMethod: data.paymentMethod,
+        quantity: data.quantity,
+        currencyCode: data.currencyCode,
+        totalAmount,
+      },
+    })
+
     if (data.paymentMethod === 'STRIPE') {
       const stripeCustomerId = await createStripeCustomer(buyer.email, `${buyer.firstName} ${buyer.lastName}`)
-      const successUrl = `${process.env.NEXT_PUBLIC_APP_URL}/buyer/sample-orders?payment=success`
-      const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/buyer/sample-orders?payment=cancelled`
+      const successUrl = buildAppUrl('/buyer/sample-orders', { payment: 'success' })
+      const cancelUrl = buildAppUrl('/buyer/sample-orders', { payment: 'cancelled' })
       const checkout = await createOneTimeCheckoutSession({
         customerId: stripeCustomerId,
         successUrl,
@@ -198,7 +233,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/sslcommerz/callback`
+      const callbackUrl = buildAppUrl('/api/payments/sslcommerz/callback')
       const checkout = await createSSLCommerzSession({
         amount: totalAmount,
         currency: data.currencyCode,
@@ -263,7 +298,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/aamarpay/callback`
+      const callbackUrl = buildAppUrl('/api/payments/aamarpay/callback')
       const checkout = await createAamarPaySession({
         amount: totalAmount,
         currency: data.currencyCode,
@@ -312,7 +347,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      const baseUrl = resolveAppUrl()
       const checkout = await createNOWPaymentsInvoice({
         amount: totalAmount,
         currency: data.currencyCode,

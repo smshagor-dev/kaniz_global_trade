@@ -50,6 +50,18 @@ function formatNumber(value?: number | string | null) {
   return numeric.toLocaleString()
 }
 
+function extractImageFile(fileList: Iterable<File> | null | undefined) {
+  if (!fileList) return null
+
+  for (const file of fileList) {
+    if (file.type.startsWith('image/')) {
+      return file
+    }
+  }
+
+  return null
+}
+
 export function VisualSearchModal({
   buttonClassName,
   iconOnly = false,
@@ -62,6 +74,7 @@ export function VisualSearchModal({
   const [file, setFile] = useState<File | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<VisualSearchResponse | null>(null)
+  const [dragActive, setDragActive] = useState(false)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file])
@@ -96,10 +109,29 @@ export function VisualSearchModal({
     }
   }, [inlinePanel, open])
 
+  useEffect(() => {
+    if (!open) return
+
+    function handlePaste(event: ClipboardEvent) {
+      const clipboardFile = extractImageFile(event.clipboardData?.files)
+      if (!clipboardFile) return
+
+      event.preventDefault()
+      void startVisualSearch(clipboardFile)
+    }
+
+    window.addEventListener('paste', handlePaste)
+
+    return () => {
+      window.removeEventListener('paste', handlePaste)
+    }
+  }, [open])
+
   function resetState() {
     setFile(null)
     setResult(null)
     setSubmitting(false)
+    setDragActive(false)
   }
 
   function closeModal() {
@@ -141,10 +173,7 @@ export function VisualSearchModal({
     }
   }
 
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const nextFile = event.target.files?.[0] || null
-    if (!nextFile) return
-
+  async function startVisualSearch(nextFile: File) {
     if (!nextFile.type.startsWith('image/')) {
       toast.error('Please choose an image file')
       return
@@ -157,7 +186,26 @@ export function VisualSearchModal({
 
     setFile(nextFile)
     setResult(null)
-    void runVisualSearch(nextFile)
+    await runVisualSearch(nextFile)
+  }
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] || null
+    if (!nextFile) return
+
+    void startVisualSearch(nextFile)
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLLabelElement>) {
+    event.preventDefault()
+    setDragActive(false)
+    const droppedFile = extractImageFile(event.dataTransfer.files)
+    if (!droppedFile) {
+      toast.error('Drop an image file to search')
+      return
+    }
+
+    void startVisualSearch(droppedFile)
   }
 
   const panelContent = (
@@ -170,7 +218,19 @@ export function VisualSearchModal({
 
       <div className="p-4 sm:p-5 lg:p-6">
         <div className="space-y-4">
-          <label className="block rounded-[10px] border-2 border-dashed border-orange-200 bg-white/85 px-4 py-6 text-center shadow-[0_18px_35px_-28px_rgba(249,115,22,0.35)] transition hover:border-orange-300 hover:bg-white sm:px-6 sm:py-7">
+          <label
+            className={`block rounded-[10px] border-2 border-dashed px-4 py-6 text-center shadow-[0_18px_35px_-28px_rgba(249,115,22,0.35)] transition sm:px-6 sm:py-7 ${
+              dragActive
+                ? 'border-orange-400 bg-orange-50'
+                : 'border-orange-200 bg-white/85 hover:border-orange-300 hover:bg-white'
+            }`}
+            onDragOver={(event) => {
+              event.preventDefault()
+              if (!dragActive) setDragActive(true)
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
+          >
             <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
             {previewUrl ? (
               <div className="space-y-3">
@@ -191,6 +251,7 @@ export function VisualSearchModal({
                     <span className="rounded border border-slate-400 px-1 py-0.5 text-xs font-semibold">V</span>
                   </p>
                   <p className="text-sm sm:text-[15px]">Drag and drop an image here or upload a file</p>
+                  <p className="text-xs text-slate-500">Paste works while this search panel is open.</p>
                 </div>
                 <span className="inline-flex rounded-full bg-orange-500 px-6 py-2.5 text-base font-bold text-white shadow-[0_16px_28px_-18px_rgba(249,115,22,0.95)] sm:px-8 sm:py-3 sm:text-lg">
                   Upload

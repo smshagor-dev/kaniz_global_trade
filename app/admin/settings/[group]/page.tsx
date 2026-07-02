@@ -89,6 +89,26 @@ interface FfmpegVerifyResponse {
   message: string
 }
 
+interface PaymentReadinessCheck {
+  level: 'ok' | 'warning' | 'error'
+  message: string
+}
+
+interface PaymentGatewayReadiness {
+  gateway: string
+  enabled: boolean
+  mode: string
+  status: 'ok' | 'warning' | 'error'
+  checks: PaymentReadinessCheck[]
+}
+
+interface PaymentReadinessResponse {
+  appUrl: string | null
+  overallStatus: 'ok' | 'warning' | 'error'
+  checks: PaymentReadinessCheck[]
+  gateways: PaymentGatewayReadiness[]
+}
+
 const CURRENCY_PAGE_SIZE = 15
 
 interface GatewayCardConfig {
@@ -362,6 +382,8 @@ export default function AdminSettingsGroupPage() {
   const [deletingPartnerId, setDeletingPartnerId] = useState<string | null>(null)
   const [verifyingFfmpeg, setVerifyingFfmpeg] = useState(false)
   const [ffmpegStatus, setFfmpegStatus] = useState<FfmpegVerifyResponse | null>(null)
+  const [verifyingPayments, setVerifyingPayments] = useState(false)
+  const [paymentReadiness, setPaymentReadiness] = useState<PaymentReadinessResponse | null>(null)
   const [languageForm, setLanguageForm] = useState({
     code: '',
     name: '',
@@ -570,6 +592,20 @@ export default function AdminSettingsGroupPage() {
     }
   }
 
+  async function verifyPaymentReadiness() {
+    setVerifyingPayments(true)
+    try {
+      const response = await post<PaymentReadinessResponse>('/admin/settings/payment/verify')
+      setPaymentReadiness((response.data as PaymentReadinessResponse) || null)
+      toast.success(response.message || 'Payment readiness completed')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Payment readiness failed'
+      toast.error(message)
+    } finally {
+      setVerifyingPayments(false)
+    }
+  }
+
   async function copyText(value: string, label: string) {
     if (!value) {
       toast.error(`No ${label.toLowerCase()} available`)
@@ -670,6 +706,16 @@ export default function AdminSettingsGroupPage() {
               {verifyingFfmpeg ? 'Verifying...' : 'Verify FFmpeg Path'}
             </button>
           ) : null}
+          {group === 'PAYMENT' ? (
+            <button
+              onClick={() => void verifyPaymentReadiness()}
+              disabled={verifyingPayments || saving}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {verifyingPayments ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {verifyingPayments ? 'Checking...' : 'Run Payment Readiness Check'}
+            </button>
+          ) : null}
           {!isLanguageGroup && !isPartnersGroup ? (
             <button
               onClick={() => void save()}
@@ -684,13 +730,56 @@ export default function AdminSettingsGroupPage() {
       </div>
 
       {group === 'PAYMENT' ? (
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="space-y-5">
+          {paymentReadiness ? (
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">Payment Launch Readiness</h2>
+                  <p className="mt-1 text-sm text-gray-500">Quick operational audit for hosted redirects, gateway credentials, and live-mode safety.</p>
+                </div>
+                <StatusPill
+                  tone={
+                    paymentReadiness.overallStatus === 'ok'
+                      ? 'success'
+                      : paymentReadiness.overallStatus === 'error'
+                        ? 'danger'
+                        : 'neutral'
+                  }
+                >
+                  {paymentReadiness.overallStatus === 'ok'
+                    ? 'Ready'
+                    : paymentReadiness.overallStatus === 'error'
+                      ? 'Blocking Issues'
+                      : 'Warnings'}
+                </StatusPill>
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {paymentReadiness.checks.map((check, index) => (
+                  <StatusPill
+                    key={`${check.message}-${index}`}
+                    tone={check.level === 'ok' ? 'success' : check.level === 'error' ? 'danger' : 'neutral'}
+                  >
+                    {check.message}
+                  </StatusPill>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <div className="grid gap-5 xl:grid-cols-2">
           {paymentCards.map((card) => {
             const enabledValue = card.enabledKey ? mergedValues[card.enabledKey] || 'false' : 'true'
             const modeValue = card.modeKey ? mergedValues[card.modeKey] || '' : ''
             const visibleItems = card.items.filter(
               (item) => item.key !== card.enabledKey && item.key !== card.modeKey
             )
+            const gatewayReadiness = paymentReadiness?.gateways.find((gateway) => {
+              const normalizedGateway = gateway.gateway.toLowerCase().replace(/[^a-z0-9]/g, '')
+              const normalizedCard = card.title.toLowerCase().replace(/[^a-z0-9]/g, '')
+              return normalizedGateway === normalizedCard
+            })
 
             return (
               <section key={card.id} className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
@@ -701,6 +790,23 @@ export default function AdminSettingsGroupPage() {
                       <p className="mt-1 max-w-xl text-sm text-white/80">{card.subtitle}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
+                      {gatewayReadiness ? (
+                        <StatusPill
+                          tone={
+                            gatewayReadiness.status === 'ok'
+                              ? 'success'
+                              : gatewayReadiness.status === 'error'
+                                ? 'danger'
+                                : 'neutral'
+                          }
+                        >
+                          {gatewayReadiness.status === 'ok'
+                            ? 'Ready'
+                            : gatewayReadiness.status === 'error'
+                              ? 'Needs Fix'
+                              : 'Check Warnings'}
+                        </StatusPill>
+                      ) : null}
                       {card.enabledKey && (
                         <Toggle
                           checked={enabledValue === 'true'}
@@ -732,6 +838,19 @@ export default function AdminSettingsGroupPage() {
                 </div>
 
                 <div className="space-y-4 p-5">
+                  {gatewayReadiness ? (
+                    <div className="grid gap-2">
+                      {gatewayReadiness.checks.map((check, index) => (
+                        <StatusPill
+                          key={`${gatewayReadiness.gateway}-${index}-${check.message}`}
+                          tone={check.level === 'ok' ? 'success' : check.level === 'error' ? 'danger' : 'neutral'}
+                        >
+                          {check.message}
+                        </StatusPill>
+                      ))}
+                    </div>
+                  ) : null}
+
                   {visibleItems.map((item) => (
                     <SettingField
                       key={item.key}
@@ -758,6 +877,7 @@ export default function AdminSettingsGroupPage() {
               No settings found for this group.
             </div>
           )}
+          </div>
         </div>
       ) : isPartnersGroup ? (
         <div className="space-y-4">

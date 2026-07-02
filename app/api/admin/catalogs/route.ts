@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAdmin, ApiError } from '@/lib/permissions'
+import { normalizeProductImages } from '@/lib/products/images'
 import { getPaginationParams, handleApiError, paginationMeta, successResponse } from '@/lib/utils/api'
 import { uniqueSlug } from '@/lib/utils/slug'
 
@@ -83,6 +84,7 @@ export async function POST(req: NextRequest) {
 
     const company = await prisma.company.findUnique({ where: { id: data.companyId }, select: { id: true } })
     if (!company) throw new ApiError(404, 'Company not found')
+    const normalizedImages = normalizeProductImages(data.images || [])
 
     const slug = await uniqueSlug(data.name, async (candidate) => {
       const existing = await prisma.product.findUnique({ where: { slug: candidate }, select: { id: true } })
@@ -112,12 +114,12 @@ export async function POST(req: NextRequest) {
         status: data.status,
         isFeatured: data.isFeatured,
         isVerified: data.isVerified,
-        images: data.images?.length
+        images: normalizedImages.length
           ? {
-              create: data.images.map((image, index) => ({
+              create: normalizedImages.map((image, index) => ({
                 url: image.url,
                 alt: image.alt,
-                isPrimary: image.isPrimary || index === 0,
+                isPrimary: image.isPrimary,
                 sortOrder: index,
               })),
             }

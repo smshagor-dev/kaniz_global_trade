@@ -87,6 +87,5 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
 
 // Declare global socket
 declare global {
-  // eslint-disable-next-line no-var
   var io: import('socket.io').Server | undefined
 }

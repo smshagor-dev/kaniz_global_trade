@@ -8,14 +8,14 @@ import { createNotification } from '@/server/services/notification'
 import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
 import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
 import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
+import { buildAppUrl, resolveAppUrl } from '@/lib/payment/urls'
 import { getPlanPrice, isFreePlan } from '@/lib/packages'
 
 function getPackagePaymentReturnUrl(status: 'success' | 'failed' | 'cancelled', gateway: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-  const url = new URL('/payment-return/packages', baseUrl)
-  url.searchParams.set('payment', status)
-  url.searchParams.set('gateway', gateway.toLowerCase())
-  return url.toString()
+  return buildAppUrl('/payment-return/packages', {
+    payment: status,
+    gateway: gateway.toLowerCase(),
+  })
 }
 
 const subscribeSchema = z.object({
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/sslcommerz/callback`
+      const callbackUrl = buildAppUrl('/api/payments/sslcommerz/callback')
       const checkout = await createSSLCommerzSession({
         amount: price,
         currency: 'USD',
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/aamarpay/callback`
+      const callbackUrl = buildAppUrl('/api/payments/aamarpay/callback')
       const checkout = await createAamarPaySession({
         amount: price,
         currency: 'USD',
@@ -259,7 +259,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      const baseUrl = resolveAppUrl()
       const checkout = await createNOWPaymentsInvoice({
         amount: price,
         currency: 'USD',

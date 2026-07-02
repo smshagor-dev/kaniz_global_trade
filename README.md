@@ -198,7 +198,10 @@ SMTP_PASS="..."
 ```
 
 Payment notes:
-- `NEXT_PUBLIC_APP_URL` should use your real app domain so gateway return URLs work correctly.
+- `NEXT_PUBLIC_APP_URL` is mandatory for hosted payment flows and must be a full absolute URL like `https://your-domain.com`.
+- Before switching any gateway to live mode, verify that `NEXT_PUBLIC_APP_URL` points to the real production domain used by buyers and suppliers.
+- Package checkout no longer collects card details locally; all sensitive payment data is entered only on the hosted provider page after redirect.
+- Admins can run a payment launch audit from `Admin > Settings > Payment > Run Payment Readiness Check` to validate gateway credentials, mode alignment, and hosted callback readiness before go-live.
 - NOWPayments IPN callback endpoint: `/api/payments/nowpayments/callback`
 - SSLCommerz and aamarPay callbacks are also handled through the app API routes.
 - `FFMPEG_PATH` can point to your local `ffmpeg` binary if it is not available in the system `PATH`.

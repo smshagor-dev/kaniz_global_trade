@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAuth, requireCompanyAccess, ApiError } from '@/lib/permissions'
+import { normalizeProductImages } from '@/lib/products/images'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 
 const imagesSchema = z.object({
@@ -27,19 +28,20 @@ export async function POST(
     await requireCompanyAccess(req, product.companyId)
     const body = await req.json()
     const data = imagesSchema.parse(body)
+    const normalizedImages = normalizeProductImages(data.images)
 
     await prisma.productImage.deleteMany({ where: { productId: id } })
 
-    if (!data.images.length) {
+    if (!normalizedImages.length) {
       return successResponse([], 'Product images cleared')
     }
 
     const created = await prisma.productImage.createMany({
-      data: data.images.map((image, index) => ({
+      data: normalizedImages.map((image, index) => ({
         productId: id,
         url: image.url,
         alt: image.alt,
-        isPrimary: image.isPrimary || index === 0,
+        isPrimary: image.isPrimary,
         sortOrder: index,
       })),
     })

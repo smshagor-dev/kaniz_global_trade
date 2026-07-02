@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
 import { requireAdmin, ApiError } from '@/lib/permissions'
+import { normalizeProductImages } from '@/lib/products/images'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { slugify } from '@/lib/utils/slug'
 
@@ -69,6 +70,7 @@ export async function PUT(
 
     const current = await prisma.product.findUnique({ where: { id }, select: { id: true } })
     if (!current) throw new ApiError(404, 'Catalog not found')
+    const normalizedImages = normalizeProductImages(data.images)
 
     const slug = data.slug ? slugify(data.slug) : slugify(data.name)
     const existing = await prisma.product.findFirst({
@@ -105,12 +107,12 @@ export async function PUT(
           status: data.status,
           isFeatured: data.isFeatured,
           isVerified: data.isVerified,
-          images: data.images.length
+          images: normalizedImages.length
             ? {
-                create: data.images.map((image, index) => ({
+                create: normalizedImages.map((image, index) => ({
                   url: image.url,
                   alt: image.alt,
-                  isPrimary: image.isPrimary || index === 0,
+                  isPrimary: image.isPrimary,
                   sortOrder: index,
                 })),
               }

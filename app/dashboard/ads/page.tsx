@@ -481,7 +481,6 @@ export default function SupplierAdsPage() {
                   {isCreativeVideo ? (
                     <video src={form.creativeUrl} controls className="aspect-video w-full bg-[#0f172a]" />
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={form.creativeUrl} alt="Creative preview" className="max-h-72 w-full object-cover" />
                   )}
                 </div>

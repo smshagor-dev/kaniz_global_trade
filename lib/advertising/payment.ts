@@ -1,5 +1,6 @@
 import prisma from '@/lib/db/prisma'
 import { resolveStripeMode } from '@/lib/payment/mode'
+import { buildAppUrl } from '@/lib/payment/urls'
 import { getAdvertisingSettings } from '@/lib/advertising/settings'
 import { getSettingsMap } from '@/lib/settings/system'
 
@@ -70,12 +71,11 @@ export function buildAdPaymentMetadata(campaignId: string, companyId: string) {
 }
 
 export function getAdPaymentReturnUrl(status: 'success' | 'failed' | 'cancelled', gateway: string, campaignId?: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-  const url = new URL('/payment-return/ads', baseUrl)
-  url.searchParams.set('payment', status)
-  url.searchParams.set('gateway', gateway.toLowerCase())
-  if (campaignId) url.searchParams.set('campaignId', campaignId)
-  return url.toString()
+  return buildAppUrl('/payment-return/ads', {
+    payment: status,
+    gateway: gateway.toLowerCase(),
+    campaignId,
+  })
 }
 
 export async function finalizeAdCampaignPayment(

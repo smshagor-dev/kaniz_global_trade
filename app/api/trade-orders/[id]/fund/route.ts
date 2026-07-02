@@ -1,13 +1,17 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
+import { requireAuth, ROLES, ApiError, assertComplianceAccess } from '@/lib/permissions'
 import { createNotification } from '@/server/services/notification'
 import { handleApiError, successResponse } from '@/lib/utils/api'
 import { createOneTimeCheckoutSession, createStripeCustomer } from '@/lib/payment/stripe'
 import { createSSLCommerzSession, generateSSLCommerzTransactionId } from '@/lib/payment/sslcommerz'
 import { createAamarPaySession, generateAamarPayTransactionId } from '@/lib/payment/aamarpay'
 import { createNOWPaymentsInvoice, generateNOWPaymentsOrderId } from '@/lib/payment/nowpayments'
+import { buildAppUrl, resolveAppUrl } from '@/lib/payment/urls'
+import { FraudEventType } from '@prisma/client'
+import { assertFraudActionAllowed, screenFraudEvent } from '@/lib/fraud/service'
+import { FRAUD_ACTIONS } from '@/lib/fraud/shared'
 
 const fundSchema = z.object({
   method: z.enum(['STRIPE', 'SSLCOMMERZ', 'AAMARPAY', 'NOWPAYMENTS', 'PAYPAL', 'BANK_TRANSFER', 'MANUAL']).default('MANUAL'),
@@ -44,14 +48,26 @@ export async function POST(
     if (order.buyerId !== authUser.userId && !authUser.roles.includes(ROLES.SUPER_ADMIN)) throw new ApiError(403, 'Access denied')
     if (order.status !== 'PENDING_ESCROW_PAYMENT') throw new ApiError(400, 'Order is not awaiting escrow funding')
 
+    await assertFraudActionAllowed({
+      userId: authUser.userId,
+      companyId: order.supplierCompanyId,
+      action: FRAUD_ACTIONS.PAYMENT_ACTIVITY,
+    })
+    if (!authUser.roles.includes(ROLES.SUPER_ADMIN)) {
+      await assertComplianceAccess({
+        userId: authUser.userId,
+        audience: 'BUYER',
+      })
+    }
+
     const buyer = await prisma.user.findUnique({ where: { id: authUser.userId } })
     if (!buyer) throw new ApiError(404, 'Buyer not found')
 
     if (data.method === 'STRIPE') {
       const stripeCustomerId = await createStripeCustomer(buyer.email, `${buyer.firstName} ${buyer.lastName}`)
 
-      const successUrl = `${process.env.NEXT_PUBLIC_APP_URL}/buyer/trade-orders?payment=success`
-      const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/buyer/trade-orders?payment=cancelled`
+      const successUrl = buildAppUrl('/buyer/trade-orders', { payment: 'success' })
+      const cancelUrl = buildAppUrl('/buyer/trade-orders', { payment: 'cancelled' })
       const checkout = await createOneTimeCheckoutSession({
         customerId: stripeCustomerId,
         successUrl,
@@ -115,7 +131,7 @@ export async function POST(
         },
       })
 
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/sslcommerz/callback`
+      const callbackUrl = buildAppUrl('/api/payments/sslcommerz/callback')
       const checkout = await createSSLCommerzSession({
         amount: Number(order.totalAmount),
         currency: order.currencyCode,
@@ -184,7 +200,7 @@ export async function POST(
         },
       })
 
-      const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/payments/aamarpay/callback`
+      const callbackUrl = buildAppUrl('/api/payments/aamarpay/callback')
       const checkout = await createAamarPaySession({
         amount: Number(order.totalAmount),
         currency: order.currencyCode,
@@ -234,7 +250,7 @@ export async function POST(
         },
       })
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      const baseUrl = resolveAppUrl()
       const checkout = await createNOWPaymentsInvoice({
         amount: Number(order.totalAmount),
         currency: order.currencyCode,
@@ -275,6 +291,19 @@ export async function POST(
         },
       })
 
+      await tx.escrowTransaction.updateMany({
+        where: {
+          tradeOrderId: order.id,
+          escrowAccountId: order.escrowAccount!.id,
+          type: 'FUNDING',
+          status: 'PENDING',
+        },
+        data: {
+          paymentId: payment.id,
+          status: 'COMPLETED',
+        },
+      })
+
       return tx.tradeOrder.update({
         where: { id: order.id },
         data: {
@@ -295,6 +324,23 @@ export async function POST(
         data: { tradeOrderId: order.id },
       })
     }
+
+    await screenFraudEvent({
+      req,
+      actorUserId: authUser.userId,
+      userId: authUser.userId,
+      companyId: order.supplierCompanyId,
+      eventType: FraudEventType.PAYMENT_ACTIVITY,
+      sourceModule: 'trade-orders/fund',
+      title: 'Trade escrow funding attempt',
+      summary: `Payment flow started with ${data.method}.`,
+      payload: {
+        method: data.method,
+        amount: order.totalAmount?.toString(),
+        currencyCode: order.currencyCode,
+        tradeOrderId: order.id,
+      },
+    })
 
     return successResponse(updated, 'Escrow funded successfully')
   } catch (error) {
