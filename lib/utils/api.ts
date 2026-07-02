@@ -75,13 +75,20 @@ export function paginationMeta(
   }
 }
 
+export const DEFAULT_API_PAGE_SIZE = 20
+export const MAX_API_PAGE_SIZE = 50
+
 export function getPaginationParams(searchParams: URLSearchParams): {
   page: number
   limit: number
   skip: number
 } {
-  const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20')))
+  const rawPage = Number.parseInt(searchParams.get('page') || '1', 10)
+  const rawLimit = Number.parseInt(searchParams.get('limit') || String(DEFAULT_API_PAGE_SIZE), 10)
+  const page = Number.isFinite(rawPage) ? Math.max(1, rawPage) : 1
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(MAX_API_PAGE_SIZE, Math.max(1, rawLimit))
+    : DEFAULT_API_PAGE_SIZE
   const skip = (page - 1) * limit
   return { page, limit, skip }
 }

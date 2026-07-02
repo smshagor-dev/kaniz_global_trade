@@ -4,34 +4,20 @@ import { successResponse, handleApiError } from '@/lib/utils/api'
 import {
   uploadImage,
   uploadFile,
-  UPLOAD_FOLDERS,
-  ALLOWED_IMAGE_TYPES,
-  ALLOWED_DOC_TYPES,
-  ALLOWED_VIDEO_TYPES,
 } from '@/lib/storage'
-
-const MAX_IMAGE = 10 * 1024 * 1024   // 10 MB
-const MAX_DOC   = 20 * 1024 * 1024   // 20 MB
-const MAX_VIDEO = 100 * 1024 * 1024  // 100 MB
-
-const FOLDER_MAP: Record<string, string> = {
-  product_image:    UPLOAD_FOLDERS.PRODUCT_IMAGES,
-  product_video:    UPLOAD_FOLDERS.PRODUCT_VIDEOS,
-  product_doc:      UPLOAD_FOLDERS.PRODUCT_DOCS,
-  category_image:   UPLOAD_FOLDERS.CATEGORY_IMAGES,
-  company_logo:     UPLOAD_FOLDERS.COMPANY_LOGOS,
-  company_banner:   UPLOAD_FOLDERS.COMPANY_BANNERS,
-  company_gallery:  UPLOAD_FOLDERS.COMPANY_GALLERY,
-  company_doc:      UPLOAD_FOLDERS.COMPANY_DOCS,
-  inspection_report: UPLOAD_FOLDERS.INSPECTION_REPORTS,
-  certificate:      UPLOAD_FOLDERS.CERTIFICATES,
-  chat_attachment:  UPLOAD_FOLDERS.CHAT_ATTACHMENTS,
-  rfq_attachment:   UPLOAD_FOLDERS.RFQ_ATTACHMENTS,
-  inquiry_attachment: UPLOAD_FOLDERS.INQUIRY_ATTACHMENTS,
-  blog_image:       UPLOAD_FOLDERS.BLOG_IMAGES,
-  avatar:           UPLOAD_FOLDERS.AVATARS,
-  payment_proof:    UPLOAD_FOLDERS.PAYMENT_PROOFS,
-}
+import { FraudEventType } from '@prisma/client'
+import { assertFraudActionAllowed, screenFraudEvent } from '@/lib/fraud/service'
+import { FRAUD_ACTIONS } from '@/lib/fraud/shared'
+import {
+  createPrivateUploadAccessUrl,
+  createUploadAuditLog,
+  requireUploadEntityAccess,
+  sanitizeFilename,
+  validateFileMimeType,
+  validateFileSize,
+  validateUploadPurpose,
+} from '@/lib/upload/security'
+import { logUploadRejectEvent } from '@/lib/monitoring/event-helpers'
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,43 +25,143 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData()
     const file = formData.get('file') as File | null
-    const type = (formData.get('type') as string) || 'product_image'
+    const purpose = validateUploadPurpose(
+      (formData.get('purpose') as string) || (formData.get('type') as string) || 'product_image'
+    )
+    const companyId = (formData.get('companyId') as string) || null
+    const entityType = (formData.get('entityType') as string) || null
+    const entityId = (formData.get('entityId') as string) || null
+    const roomId = (formData.get('roomId') as string) || null
 
     if (!file) throw new ApiError(400, 'No file provided')
 
-    const folder = FOLDER_MAP[type]
-    if (!folder) throw new ApiError(400, `Unknown upload type: ${type}`)
+    if (!['kyc_document', 'fraud_evidence', 'dispute_evidence'].includes(purpose.purpose)) {
+      await assertFraudActionAllowed({
+        userId: authUser.userId,
+        companyId: authUser.companyId,
+        action: FRAUD_ACTIONS.DOCUMENT_UPLOAD,
+      })
+    }
 
     const mimeType = file.type
     const buffer = Buffer.from(await file.arrayBuffer())
     const size = buffer.length
+    const safeFilename = sanitizeFilename(file.name)
+    const { mimeType: normalizedMimeType } = validateFileMimeType(purpose, mimeType, safeFilename)
+    validateFileSize(purpose, size)
 
-    const isPrivate = ['company_doc', 'product_doc', 'certificate', 'payment_proof', 'inspection_report'].includes(type)
+    const accessScope = await requireUploadEntityAccess(authUser, {
+      purpose: purpose.purpose,
+      companyId,
+      entityType,
+      entityId,
+      roomId,
+    })
 
-    // Validate type & size
-    if (ALLOWED_IMAGE_TYPES.includes(mimeType)) {
-      if (size > MAX_IMAGE) throw new ApiError(400, 'Image too large. Max 10 MB.')
-      const result = await uploadImage(buffer, folder, file.name, { mimeType })
-      return successResponse(result, 'Image uploaded')
+    if (purpose.kind === 'image') {
+      const result = await uploadImage(buffer, purpose.folder, safeFilename, {
+        mimeType: normalizedMimeType,
+        isPrivate: purpose.isPrivate,
+      })
+      const privateUrl = purpose.isPrivate
+        ? await createPrivateUploadAccessUrl(result.key, purpose.purpose)
+        : null
+      await createUploadAuditLog({
+        user: authUser,
+        purpose: purpose.purpose,
+        key: result.key,
+        filename: result.filename,
+        mimeType: result.mimeType,
+        size: result.size,
+        isPrivate: purpose.isPrivate,
+        companyId: accessScope.companyId,
+        entityType,
+        entityId,
+      })
+      await screenFraudEvent({
+        req,
+        actorUserId: authUser.userId,
+        userId: authUser.userId,
+        companyId: authUser.companyId,
+        eventType: FraudEventType.DOCUMENT_UPLOAD,
+        sourceModule: 'upload',
+        title: 'Image upload activity',
+        payload: { type: purpose.purpose, mimeType: normalizedMimeType, size, fileCount: 1, fileName: safeFilename, isPrivate: purpose.isPrivate },
+      })
+      return successResponse({
+        ...result,
+        accessUrl: privateUrl,
+        private: purpose.isPrivate,
+      }, 'Image uploaded')
     }
 
-    if (ALLOWED_DOC_TYPES.includes(mimeType)) {
-      if (size > MAX_DOC) throw new ApiError(400, 'Document too large. Max 20 MB.')
-      const result = await uploadFile(buffer, folder, file.name, mimeType, isPrivate)
-      return successResponse(result, 'Document uploaded')
+    if (purpose.kind === 'document' || purpose.kind === 'image_or_document') {
+      const result = await uploadFile(buffer, purpose.folder, safeFilename, normalizedMimeType, purpose.isPrivate)
+      const privateUrl = purpose.isPrivate
+        ? await createPrivateUploadAccessUrl(result.key, purpose.purpose)
+        : null
+      await createUploadAuditLog({
+        user: authUser,
+        purpose: purpose.purpose,
+        key: result.key,
+        filename: result.filename,
+        mimeType: result.mimeType,
+        size: result.size,
+        isPrivate: purpose.isPrivate,
+        companyId: accessScope.companyId,
+        entityType,
+        entityId,
+      })
+      await screenFraudEvent({
+        req,
+        actorUserId: authUser.userId,
+        userId: authUser.userId,
+        companyId: authUser.companyId,
+        eventType: FraudEventType.DOCUMENT_UPLOAD,
+        sourceModule: 'upload',
+        title: 'Document upload activity',
+        payload: { type: purpose.purpose, mimeType: normalizedMimeType, size, fileCount: 1, fileName: safeFilename, isPrivate: purpose.isPrivate },
+      })
+      return successResponse({
+        ...result,
+        accessUrl: privateUrl,
+        private: purpose.isPrivate,
+      }, 'Document uploaded')
     }
 
-    if (ALLOWED_VIDEO_TYPES.includes(mimeType)) {
-      if (size > MAX_VIDEO) throw new ApiError(400, 'Video too large. Max 100 MB.')
-      const result = await uploadFile(buffer, folder, file.name, mimeType, false)
-      const extension = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '.mp4'
+    if (purpose.kind === 'video') {
+      const result = await uploadFile(buffer, purpose.folder, safeFilename, normalizedMimeType, purpose.isPrivate)
+      const extension = safeFilename.includes('.') ? safeFilename.slice(safeFilename.lastIndexOf('.')) : '.mp4'
       const { createVideoThumbnail } = await import('@/lib/media/video-thumbnail')
-      const thumbnailBuffer = type === 'product_video'
+      const thumbnailBuffer = purpose.purpose === 'product_video'
         ? await createVideoThumbnail(buffer, extension)
         : null
       const thumbnailUpload = thumbnailBuffer
-        ? await uploadImage(thumbnailBuffer, `${folder}/thumbs`, `${file.name}-thumb.jpg`, { width: 1280, height: 720, quality: 82 })
+        ? await uploadImage(thumbnailBuffer, `${purpose.folder}/thumbs`, `${safeFilename}-thumb.jpg`, { width: 1280, height: 720, quality: 82 })
         : null
+      await createUploadAuditLog({
+        user: authUser,
+        purpose: purpose.purpose,
+        key: result.key,
+        filename: result.filename,
+        mimeType: result.mimeType,
+        size: result.size,
+        isPrivate: purpose.isPrivate,
+        companyId: accessScope.companyId,
+        entityType,
+        entityId,
+      })
+
+      await screenFraudEvent({
+        req,
+        actorUserId: authUser.userId,
+        userId: authUser.userId,
+        companyId: authUser.companyId,
+        eventType: FraudEventType.DOCUMENT_UPLOAD,
+        sourceModule: 'upload',
+        title: 'Video upload activity',
+        payload: { type: purpose.purpose, mimeType: normalizedMimeType, size, fileCount: 1, fileName: safeFilename, generatedThumbnail: !!thumbnailUpload },
+      })
 
       return successResponse(
         {
@@ -88,6 +174,12 @@ export async function POST(req: NextRequest) {
 
     throw new ApiError(400, 'Unsupported file type')
   } catch (error) {
+    if (error instanceof ApiError) {
+      await logUploadRejectEvent({
+        message: 'Upload request rejected.',
+        reason: error.message,
+      })
+    }
     return handleApiError(error)
   }
 }

@@ -5,7 +5,7 @@ import path from 'path'
 import sharp from 'sharp'
 import { getSettingsMap } from '@/lib/settings/system'
 
-async function getStorageConfig() {
+export async function getStorageConfig() {
   const settings = await getSettingsMap([
     'S3_ACCESS_KEY',
     'S3_SECRET_KEY',
@@ -51,6 +51,10 @@ export const UPLOAD_FOLDERS = {
   BANNERS: 'banners',
   AVATARS: 'avatars',
   PAYMENT_PROOFS: 'payments/proofs',
+  KYC_DOCUMENTS: 'kyc/documents',
+  INSURANCE_CLAIM_EVIDENCE: 'insurance/claims',
+  FRAUD_EVIDENCE: 'fraud/evidence',
+  DISPUTE_EVIDENCE: 'disputes/evidence',
 } as const
 
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
@@ -80,6 +84,7 @@ type ImageUploadOptions = {
   height?: number
   quality?: number
   mimeType?: string
+  isPrivate?: boolean
 }
 
 export function validateFileType(
@@ -191,7 +196,7 @@ export async function uploadImage(
       Key: key,
       Body: optimized.buffer,
       ContentType: optimized.mimeType,
-      ACL: 'public-read',
+      ACL: options?.isPrivate ? 'private' : 'public-read',
       CacheControl: 'max-age=31536000',
     })
   )

@@ -1,14 +1,60 @@
 import { Redis } from 'ioredis'
 
-const globalForRedis = globalThis as unknown as { redis: Redis | undefined }
+type PipelineResult = Array<[Error | null, unknown]> | null
+
+interface RedisLike {
+  get(key: string): Promise<string | null>
+  setex(key: string, ttlSeconds: number, value: string): Promise<unknown>
+  del(...keys: string[]): Promise<unknown>
+  ping(): Promise<string>
+  scan(cursor: string, ...args: Array<string | number>): Promise<[string, string[]]>
+  lpush(key: string, value: string): Promise<unknown>
+  ltrim(key: string, start: number, end: number): Promise<unknown>
+  lrange(key: string, start: number, end: number): Promise<string[]>
+  pipeline(): {
+    zremrangebyscore(key: string, min: string | number, max: string | number): unknown
+    zadd(key: string, score: number, member: string): unknown
+    zcard(key: string): unknown
+    expire(key: string, seconds: number): unknown
+    exec(): Promise<PipelineResult>
+  }
+  on(event: string, listener: (error: Error) => void): unknown
+}
+
+class NoopRedis implements RedisLike {
+  async get() { return null }
+  async setex() { return null }
+  async del() { return 0 }
+  async ping() { return 'PONG' }
+  async scan(cursor: string, ..._args: Array<string | number>): Promise<[string, string[]]> {
+    return [cursor === '0' ? '0' : '0', []]
+  }
+  async lpush() { return 0 }
+  async ltrim() { return 0 }
+  async lrange() { return [] }
+  pipeline() {
+    return {
+      zremrangebyscore(_key: string, _min: string | number, _max: string | number) { return null },
+      zadd(_key: string, _score: number, _member: string) { return null },
+      zcard(_key: string) { return null },
+      expire(_key: string, _seconds: number) { return null },
+      async exec(): Promise<PipelineResult> { return [[null, 0], [null, 0], [null, 0], [null, 0]] },
+    }
+  }
+  on() { return null }
+}
+
+const globalForRedis = globalThis as unknown as { redis: RedisLike | undefined }
 
 export const redis =
   globalForRedis.redis ??
-  new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-    maxRetriesPerRequest: 3,
-    lazyConnect: true,
-    enableReadyCheck: false,
-  })
+  (process.env.NODE_ENV === 'test'
+    ? new NoopRedis()
+    : (new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+        maxRetriesPerRequest: 3,
+        lazyConnect: true,
+        enableReadyCheck: false,
+      }) as unknown as RedisLike))
 
 if (process.env.NODE_ENV !== 'production') globalForRedis.redis = redis
 
@@ -55,7 +101,15 @@ export async function deleteCache(key: string): Promise<void> {
 
 export async function deleteCachePattern(pattern: string): Promise<void> {
   try {
-    const keys = await redis.keys(pattern)
+    const keys: string[] = []
+    let cursor = '0'
+
+    do {
+      const [nextCursor, batch] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100)
+      cursor = nextCursor
+      keys.push(...batch)
+    } while (cursor !== '0')
+
     if (keys.length > 0) await redis.del(...keys)
   } catch {
     // Redis is optional in local development.

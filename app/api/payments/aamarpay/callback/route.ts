@@ -4,6 +4,10 @@ import { sendInvoicePaidEmail } from '@/lib/email'
 import { createNotification } from '@/server/services/notification'
 import { searchAamarPayTransaction } from '@/lib/payment/aamarpay'
 import { failAdCampaignPayment, finalizeAdCampaignPayment, getAdPaymentReturnUrl } from '@/lib/advertising/payment'
+import { FraudEventType } from '@prisma/client'
+import { screenFraudEvent } from '@/lib/fraud/service'
+import { assertPaymentStatusTransition, enforceWebhookIdempotency } from '@/lib/payment/safety'
+import { logPaymentWebhookFailureEvent } from '@/lib/monitoring/event-helpers'
 
 type CallbackPayload = Record<string, string>
 
@@ -120,6 +124,18 @@ async function finalizeTradeOrder(paymentId: string, tradeOrderId: string, paylo
         status: 'HELD',
         fundedAt: new Date(),
         termsAccepted: true,
+      },
+    }),
+    prisma.escrowTransaction.updateMany({
+      where: {
+        tradeOrderId: order.id,
+        escrowAccountId: order.escrowAccount.id,
+        type: 'FUNDING',
+        status: 'PENDING',
+      },
+      data: {
+        paymentId,
+        status: 'COMPLETED',
       },
     }),
     prisma.tradeOrder.update({
@@ -281,7 +297,24 @@ async function processCallback(req: NextRequest) {
     return NextResponse.json({ success: true, alreadyProcessed: true })
   }
 
+  const eventKey = `AAMARPAY:${String(payload.pg_txnid || payload.mer_txnid)}:${statusCode || payStatus || 'UNKNOWN'}`
+  const idempotency = await enforceWebhookIdempotency({
+    paymentId: payment.id,
+    eventKey,
+    metadata: payment.metadata,
+  })
+  if (idempotency.duplicate) {
+    if (isBrowserCallback(req)) {
+      const path = metadata.kind === 'AD_CAMPAIGN'
+        ? getAdPaymentReturnUrl('success', 'aamarpay', metadata.adCampaignId)
+        : getRedirectPath(metadata.kind, 'success')
+      return NextResponse.redirect(new URL(path, req.url), { status: 303 })
+    }
+    return NextResponse.json({ success: true, alreadyProcessed: true })
+  }
+
   if (statusCode !== '2' || payStatus !== 'successful') {
+    assertPaymentStatusTransition(payment.status, statusCode === '7' ? 'FAILED' : 'CANCELLED')
     if (metadata.kind === 'AD_CAMPAIGN') {
       await failAdCampaignPayment(
         payment.id,
@@ -292,6 +325,17 @@ async function processCallback(req: NextRequest) {
     } else {
       await markPaymentAsFailed(payment.id, statusCode === '7' ? 'FAILED' : 'CANCELLED', payload)
     }
+    await screenFraudEvent({
+      req,
+      actorUserId: payment.userId,
+      userId: payment.userId,
+      companyId: metadata.supplierCompanyId || metadata.companyId,
+      eventType: FraudEventType.PAYMENT_ACTIVITY,
+      sourceModule: 'payments/aamarpay/callback',
+      title: 'aamarPay payment failed or cancelled',
+      summary: payload.reason || payload.pay_status || payload.status_code || 'Callback returned non-success status.',
+      payload: { transactionId, statusCode, payStatus, kind: metadata.kind, amount: payment.amount.toString(), currency: payment.currency },
+    })
   } else {
     const transaction = await searchAamarPayTransaction(transactionId)
     const transactionStatusCode = String(transaction.status_code || '')
@@ -301,6 +345,7 @@ async function processCallback(req: NextRequest) {
     const merchantCurrency = String(transaction.currency_merchant || payment.currency).toUpperCase()
 
     if (transactionStatusCode !== '2' || transactionPayStatus !== 'successful') {
+      assertPaymentStatusTransition(payment.status, 'FAILED')
       const failurePayload = {
         ...payload,
         reason: `Search transaction status: ${transactionStatusCode || 'UNKNOWN'}`,
@@ -309,6 +354,7 @@ async function processCallback(req: NextRequest) {
       else await markPaymentAsFailed(payment.id, 'FAILED', failurePayload)
       redirectStatus = 'failed'
     } else if (expectedAmount !== paidAmount || merchantCurrency !== payment.currency.toUpperCase()) {
+      assertPaymentStatusTransition(payment.status, 'FAILED')
       const failurePayload = {
         ...payload,
         reason: `Amount or currency mismatch. Expected ${expectedAmount} ${payment.currency}, got ${paidAmount} ${merchantCurrency}`,
@@ -317,6 +363,7 @@ async function processCallback(req: NextRequest) {
       else await markPaymentAsFailed(payment.id, 'FAILED', failurePayload)
       redirectStatus = 'failed'
     } else {
+      assertPaymentStatusTransition(payment.status, 'PAID')
       const mergedPayload = {
         ...payload,
         pg_txnid: String(transaction.pg_txnid || payload.pg_txnid || ''),
@@ -335,6 +382,17 @@ async function processCallback(req: NextRequest) {
       } else if (payment.sampleOrderId) {
         await finalizeSampleOrder(payment.id, payment.sampleOrderId, mergedPayload)
       }
+      await screenFraudEvent({
+        req,
+        actorUserId: payment.userId,
+        userId: payment.userId,
+        companyId: metadata.supplierCompanyId || metadata.companyId,
+        eventType: FraudEventType.PAYMENT_ACTIVITY,
+        sourceModule: 'payments/aamarpay/callback',
+        title: 'aamarPay payment confirmed',
+        summary: `Payment callback completed for ${metadata.kind || 'marketplace'} flow.`,
+        payload: { transactionId, statusCode: transactionStatusCode, payStatus: transactionPayStatus, kind: metadata.kind, amount: payment.amount.toString(), currency: payment.currency },
+      })
       redirectStatus = 'success'
     }
   }
@@ -353,6 +411,11 @@ export async function POST(req: NextRequest) {
   try {
     return await processCallback(req)
   } catch (error) {
+    await logPaymentWebhookFailureEvent({
+      provider: 'AAMARPAY',
+      message: 'aamarPay callback processing failed.',
+      reason: error instanceof Error ? error.message : 'unknown_error',
+    })
     console.error('aamarPay callback error:', error)
     return NextResponse.json({ success: false, message: 'aamarPay callback failed' }, { status: 500 })
   }

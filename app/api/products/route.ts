@@ -1,11 +1,15 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, requireCompanyAccess, getAuthUser, isAdmin, ROLES, ApiError } from '@/lib/permissions'
+import { requireCompanyAccess, getAuthUser, isAdmin, ROLES, ApiError, requireVerifiedSupplier } from '@/lib/permissions'
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 import { logCreate } from '@/lib/utils/audit'
-import { indexProduct } from '@/lib/search'
+import { invalidateProductCaches } from '@/lib/cache/public'
+import { scheduleSearchSync } from '@/lib/search/sync'
 import { uniqueSlug } from '@/lib/utils/slug'
+import { FraudEventType } from '@prisma/client'
+import { assertFraudActionAllowed, screenFraudEvent } from '@/lib/fraud/service'
+import { FRAUD_ACTIONS } from '@/lib/fraud/shared'
 
 const createProductSchema = z.object({
   companyId: z.string(),
@@ -65,7 +69,7 @@ export async function GET(req: NextRequest) {
     const where: Record<string, unknown> = { deletedAt: null }
 
     // Public users only see approved products
-    if (!authUser || (!isAdmin(authUser) && !authUser.roles.includes(ROLES.SUPPLIER_OWNER))) {
+    if (!authUser || (!isAdmin(authUser) && !authUser.roles.includes(ROLES.SUPPLIER_OWNER) && !authUser.roles.includes(ROLES.SUPPLIER_STAFF))) {
       where.status = 'APPROVED'
       where.category = { approvalStatus: 'APPROVED', isActive: true }
       where.AND = [
@@ -76,7 +80,7 @@ export async function GET(req: NextRequest) {
           ],
         },
       ]
-    } else if (authUser.roles.includes(ROLES.SUPPLIER_OWNER) && !isAdmin(authUser)) {
+    } else if ((authUser.roles.includes(ROLES.SUPPLIER_OWNER) || authUser.roles.includes(ROLES.SUPPLIER_STAFF)) && !isAdmin(authUser)) {
       // Suppliers see their own company products
       const companyId = searchParams.get('companyId')
       if (companyId) {
@@ -98,8 +102,8 @@ export async function GET(req: NextRequest) {
 
     if (categoryId) where.categoryId = categoryId
     if (subcategoryId) where.subcategoryId = subcategoryId
-    if (companyId && isAdmin(authUser!)) where.companyId = companyId
-    if (status && isAdmin(authUser!)) where.status = status
+    if (companyId && authUser && isAdmin(authUser)) where.companyId = companyId
+    if (status && authUser && isAdmin(authUser)) where.status = status
     if (isFeatured === 'true') where.isFeatured = true
     if (verified === 'true') where.company = { verificationStatus: { in: ['ADMIN_VERIFIED', 'PREMIUM_VERIFIED'] } }
 
@@ -125,6 +129,7 @@ export async function GET(req: NextRequest) {
           { isFeatured: 'desc' },
           { totalViews: 'desc' },
           { createdAt: 'desc' },
+          { id: 'desc' },
         ],
         include: {
           images: { where: { isPrimary: true }, take: 1 },
@@ -135,6 +140,7 @@ export async function GET(req: NextRequest) {
               slug: true,
               logo: true,
               verificationStatus: true,
+              fraudPublicFlag: true,
               country: { select: { name: true, code: true } },
             },
           },
@@ -154,13 +160,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authUser = await requireAuth(req)
-    const userIsAdmin = isAdmin(authUser)
     const body = await req.json()
     const data = createProductSchema.parse(body)
+    const authUser = await requireVerifiedSupplier(req, data.companyId)
+    const userIsAdmin = isAdmin(authUser)
 
     // Verify company access
     await requireCompanyAccess(req, data.companyId)
+    await assertFraudActionAllowed({
+      userId: authUser.userId,
+      companyId: data.companyId,
+      action: FRAUD_ACTIONS.PRODUCT_CREATE,
+    })
 
     // Check subscription product limit
     const subscription = await prisma.subscription.findUnique({
@@ -212,23 +223,29 @@ export async function POST(req: NextRequest) {
 
     await logCreate(authUser.userId, 'products', 'Product', product.id, { name: product.name })
 
-    if (status === 'APPROVED') {
-      try {
-        await indexProduct({
-          id: product.id,
-          name: product.name,
-          slug: product.slug,
-          shortDescription: product.shortDescription,
-          companyId: product.companyId,
-          categoryId: product.categoryId,
-          priceMin: product.priceMin?.toString(),
-          priceMax: product.priceMax?.toString(),
-          moq: product.moq?.toString(),
-          status,
-          isFeatured: product.isFeatured,
-        })
-      } catch { /* non-critical */ }
-    }
+    await invalidateProductCaches(product.id, product.slug)
+    await scheduleSearchSync('product', product.id, status === 'APPROVED' ? 'upsert' : 'remove')
+
+    await screenFraudEvent({
+      req,
+      actorUserId: authUser.userId,
+      userId: authUser.userId,
+      companyId: data.companyId,
+      eventType: FraudEventType.PRODUCT_CREATE,
+      sourceModule: 'products',
+      title: 'Supplier product created',
+      summary: `Product "${product.name}" created in marketplace.`,
+      payload: {
+        name: data.name,
+        categoryId: data.categoryId,
+        priceMin: data.priceMin,
+        priceMax: data.priceMax,
+        moq: data.moq,
+        tags: data.tags,
+        shortDescription: data.shortDescription,
+        status,
+      },
+    })
 
     return successResponse(
       product,

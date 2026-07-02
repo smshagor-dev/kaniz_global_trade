@@ -4,6 +4,8 @@ import prisma from '@/lib/db/prisma'
 import { ApiError, ROLES, getAuthUser, isAdmin, requireAuth } from '@/lib/permissions'
 import { errorResponse, handleApiError, successResponse } from '@/lib/utils/api'
 import { isPubliclyVisibleRFQStatus } from '@/lib/rfqs/visibility'
+import { invalidateRFQCaches } from '@/lib/cache/public'
+import { scheduleSearchSync } from '@/lib/search/sync'
 
 const updateRFQSchema = z.object({
   categoryId: z.string().nullable().optional(),
@@ -210,7 +212,46 @@ export async function PUT(
       },
     })
 
+    await invalidateRFQCaches()
+    await scheduleSearchSync('rfq', updated.id, 'upsert')
+
     return successResponse(updated, 'RFQ updated successfully')
+  } catch (error) {
+    return handleApiError(error)
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const authUser = await requireAuth(req)
+    const { id } = await params
+
+    const rfq = await prisma.rFQ.findUnique({
+      where: { id },
+      select: { id: true, buyerId: true, deletedAt: true },
+    })
+
+    if (!rfq || rfq.deletedAt) throw new ApiError(404, 'RFQ not found')
+    if (rfq.buyerId !== authUser.userId && !isAdmin(authUser)) {
+      throw new ApiError(403, 'Access denied')
+    }
+
+    await prisma.rFQ.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        status: 'CANCELLED',
+        isPublic: false,
+      },
+    })
+
+    await invalidateRFQCaches()
+    await scheduleSearchSync('rfq', id, 'remove')
+
+    return successResponse(null, 'RFQ deleted successfully')
   } catch (error) {
     return handleApiError(error)
   }

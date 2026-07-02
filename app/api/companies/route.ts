@@ -4,7 +4,8 @@ import prisma from '@/lib/db/prisma'
 import { getAuthUser, requireAuth, ROLES, ApiError } from '@/lib/permissions'
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 import { logCreate } from '@/lib/utils/audit'
-import { indexCompany } from '@/lib/search'
+import { invalidateCompanyCaches } from '@/lib/cache/public'
+import { scheduleSearchSync } from '@/lib/search/sync'
 
 const createCompanySchema = z.object({
   name: z.string().min(2).max(200),
@@ -86,6 +87,7 @@ export async function GET(req: NextRequest) {
           { isPremium: 'desc' },
           { totalViews: 'desc' },
           { createdAt: 'desc' },
+          { id: 'desc' },
         ],
         select: {
           id: true,
@@ -95,6 +97,7 @@ export async function GET(req: NextRequest) {
           businessType: true,
           countryId: true,
           verificationStatus: true,
+          fraudPublicFlag: true,
           isPremium: true,
           isFeatured: true,
           totalViews: true,
@@ -172,18 +175,8 @@ export async function POST(req: NextRequest) {
 
     await logCreate(authUser.userId, 'companies', 'Company', company.id, { name: company.name })
 
-    // Index in search
-    try {
-      await indexCompany({
-        id: company.id,
-        name: company.name,
-        slug: company.slug,
-        businessType: company.businessType,
-        countryId: company.countryId,
-        verificationStatus: company.verificationStatus,
-        status: company.status,
-      })
-    } catch { /* Search indexing is non-critical */ }
+    await invalidateCompanyCaches(company.id, company.slug)
+    await scheduleSearchSync('company', company.id, 'upsert')
 
     return successResponse(company, 'Company created successfully', undefined, 201)
   } catch (error) {

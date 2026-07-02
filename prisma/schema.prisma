@@ -44,12 +44,6 @@ enum CompanyVerificationInputType {
   BOTH
 }
 
-enum CompanyVerificationSubmissionStatus {
-  DRAFT
-  SUBMITTED
-  APPROVED
-  REJECTED
-}
 
 enum ProductStatus {
   DRAFT
@@ -100,13 +94,6 @@ enum PaymentStatus {
   REFUNDED
 }
 
-enum BuyerVerificationStatus {
-  DRAFT
-  SUBMITTED
-  UNDER_REVIEW
-  VERIFIED
-  REJECTED
-}
 
 enum TradeOrderStatus {
   PENDING_ESCROW_PAYMENT
@@ -178,6 +165,21 @@ enum KYCStatus {
   REJECTED
 }
 
+enum B2BCompanyType {
+  BUYER
+  SUPPLIER
+  MANUFACTURER
+  DISTRIBUTOR
+  WHOLESALER
+  RETAILER
+}
+
+enum B2BVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum InspectionStatus {
   REQUESTED
   SCHEDULED
@@ -192,6 +194,55 @@ enum FraudAlertStatus {
   WATCHLIST
   RESOLVED
   DISMISSED
+}
+
+enum FraudRiskLevel {
+  SAFE
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+  BLOCKED
+}
+
+enum FraudPublicFlag {
+  VERIFIED
+  UNDER_REVIEW
+  LIMITED_ACCESS
+  HIGH_RISK
+  BLOCKED
+}
+
+enum FraudEntityType {
+  USER
+  COMPANY
+}
+
+enum FraudEventType {
+  REGISTRATION
+  LOGIN
+  PROFILE_UPDATE
+  DOCUMENT_UPLOAD
+  PRODUCT_CREATE
+  RFQ_CREATE
+  QUOTATION_CREATE
+  ORDER_CREATE
+  PAYMENT_ACTIVITY
+  REPORT_ACTIVITY
+  SUSPICIOUS_ACTIVITY
+  KYC_SUBMISSION
+  INQUIRY_CREATE
+  COMPANY_CREATE
+  COMPANY_UPDATE
+  MANUAL_REVIEW
+}
+
+enum FraudReviewDecision {
+  APPROVE
+  CLEAR_RESTRICTIONS
+  RESTRICT
+  BLOCK
+  REQUEST_DOCUMENTS
 }
 
 enum CommissionStatus {
@@ -448,6 +499,27 @@ enum AuditAction {
   IMPORT
 }
 
+enum SystemEventSeverity {
+  INFO
+  WARN
+  ERROR
+  CRITICAL
+}
+
+enum SystemEventCategory {
+  AUTH
+  ADMIN
+  PAYMENT
+  WEBHOOK
+  UPLOAD
+  QUEUE
+  SEARCH
+  SHIPMENT
+  SECURITY
+  HEALTH
+  BACKUP
+}
+
 // ============================================================
 // AUTH & USER MODELS
 // ============================================================
@@ -467,6 +539,13 @@ model User {
   twoFactorEnabled Boolean    @default(false)
   lastLoginAt      DateTime?
   lastLoginIp      String?
+  fraudRiskScore   Int        @default(0)
+  fraudRiskLevel   FraudRiskLevel @default(SAFE)
+  fraudPublicFlag  FraudPublicFlag?
+  fraudRestrictedActions String? @db.LongText
+  fraudNotes       String?    @db.Text
+  fraudLastReviewedAt DateTime?
+  fraudLastNotifiedAt DateTime?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   deletedAt        DateTime?
@@ -478,7 +557,6 @@ model User {
   passwordResets    PasswordResetToken[]
   twoFactorSecret   TwoFactorSecret?
   companyUsers      CompanyUser[]
-  buyerVerification BuyerVerification?
   inquiries         Inquiry[]                @relation("BuyerInquiries")
   rfqs              RFQ[]                    @relation("BuyerRFQs")
   chatParticipants  ChatParticipant[]
@@ -503,6 +581,13 @@ model User {
   transactionRatingsGiven TransactionRating[]    @relation("RatingAuthor")
   transactionRatingsReceived TransactionRating[] @relation("RatingRecipient")
   fraudAlerts       FraudAlert[]             @relation("FraudReportedBy")
+  fraudAlertsTargeted FraudAlert[]           @relation("FraudTargetUser")
+  fraudAlertsReviewed FraudAlert[]           @relation("FraudReviewedByAdmin")
+  fraudRiskHistories FraudRiskHistory[]      @relation("FraudUserHistory")
+  fraudActorHistories FraudRiskHistory[]     @relation("FraudActorHistory")
+  fraudReviewsTargeted FraudReview[]         @relation("FraudReviewedUser")
+  fraudReviewsAuthored FraudReview[]         @relation("FraudReviewAdmin")
+  fraudDeviceLogs    FraudDeviceLog[]
   creditProfile     CreditProfile?
   commissions       PlatformCommission[]
   financingRequests FinancingRequest[]
@@ -539,9 +624,13 @@ model User {
   serviceFeeAuditEntries ServiceFeeSetting[] @relation("ServiceFeeUpdatedBy")
   taxVatAuditEntries TaxVatSetting[] @relation("TaxVatUpdatedBy")
   revenueReversalActions RevenueReversalLedger[] @relation("RevenueReversalCreatedBy")
+  b2bCompanyOwned B2BCompany?
+  buyerVerifiedCompanies B2BCompany[] @relation("B2BCompanyBuyerVerifiedBy")
+  supplierVerifiedCompanies B2BCompany[] @relation("B2BCompanySupplierVerifiedBy")
 
   @@index([email])
   @@index([status])
+  @@index([fraudRiskLevel])
   @@index([deletedAt])
 }
 
@@ -685,6 +774,13 @@ model Company {
   isPremium           Boolean            @default(false)
   totalViews          Int                @default(0)
   totalInquiries      Int                @default(0)
+  fraudRiskScore      Int                @default(0)
+  fraudRiskLevel      FraudRiskLevel     @default(SAFE)
+  fraudPublicFlag     FraudPublicFlag?
+  fraudRestrictedActions String?         @db.LongText
+  fraudNotes          String?            @db.Text
+  fraudLastReviewedAt DateTime?
+  fraudLastNotifiedAt DateTime?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   deletedAt           DateTime?
@@ -697,7 +793,6 @@ model Company {
   gallery           CompanyGallery[]
   documents         CompanyDocument[]
   verification      CompanyVerification?
-  verificationSubmissions CompanyVerificationSubmission[]
   certificates      CompanyCertificate[]
   factoryInfo       CompanyFactoryInfo?
   tradeInfo         CompanyTradeInfo?
@@ -722,6 +817,8 @@ model Company {
   escrowDisputes    EscrowDispute[]      @relation("SupplierDisputes")
   transactionRatingsReceived TransactionRating[] @relation("CompanyRatingRecipient")
   fraudAlertsTargeted FraudAlert[]       @relation("FraudTargetCompany")
+  fraudRiskHistories  FraudRiskHistory[] @relation("FraudCompanyHistory")
+  fraudReviews        FraudReview[]      @relation("FraudReviewedCompany")
   creditProfile     CreditProfile?
   adCampaigns       AdCampaign[]
   financingRequests FinancingRequest[]
@@ -747,12 +844,17 @@ model Company {
   refundRequests RefundRequest[]
   serviceFeeSettings ServiceFeeSetting[] @relation("ServiceFeeCompany")
   revenueReversalLedgers RevenueReversalLedger[]
+  rfqMatchResults RfqMatchResult[]
 
   @@index([slug])
   @@index([status])
   @@index([verificationStatus])
+  @@index([fraudRiskLevel])
   @@index([countryId])
   @@index([deletedAt])
+  @@index([status, deletedAt, createdAt])
+  @@index([status, verificationStatus, createdAt])
+  @@index([countryId, status, createdAt])
 }
 
 model CompanyUser {
@@ -829,49 +931,6 @@ model CompanyVerification {
   updatedAt       DateTime           @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-}
-
-model CompanyVerificationRequirement {
-  id          String                       @id @default(uuid())
-  title       String
-  description String?                      @db.Text
-  inputType   CompanyVerificationInputType @default(FILE)
-  isRequired  Boolean                      @default(true)
-  isActive    Boolean                      @default(true)
-  sortOrder   Int                          @default(0)
-  createdAt   DateTime                     @default(now())
-  updatedAt   DateTime                     @updatedAt
-
-  submissions CompanyVerificationSubmission[]
-
-  @@index([isActive])
-  @@index([sortOrder])
-}
-
-model CompanyVerificationSubmission {
-  id              String                              @id @default(uuid())
-  companyId       String
-  requirementId   String
-  textValue       String?                             @db.LongText
-  fileUrl         String?                             @db.Text
-  fileStorageKey  String?                             @db.Text
-  fileName        String?
-  fileMimeType    String?
-  status          CompanyVerificationSubmissionStatus @default(DRAFT)
-  adminNotes      String?                             @db.Text
-  submittedAt     DateTime?
-  reviewedAt      DateTime?
-  reviewedBy      String?
-  createdAt       DateTime                            @default(now())
-  updatedAt       DateTime                            @updatedAt
-
-  company     Company                        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  requirement CompanyVerificationRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
-
-  @@unique([companyId, requirementId])
-  @@index([companyId])
-  @@index([requirementId])
-  @@index([status])
 }
 
 model CompanyCertificate {
@@ -1057,12 +1116,17 @@ model Product {
   analytics       ProductAnalytic[]
   viewHistories   UserViewHistory[]
   adCampaigns     AdCampaign[]
+  transactionRatings TransactionRating[]
+  rfqMatchResults RfqMatchResult[]
 
   @@index([companyId])
   @@index([categoryId])
   @@index([status])
   @@index([slug])
   @@index([deletedAt])
+  @@index([companyId, status, createdAt])
+  @@index([categoryId, status, createdAt])
+  @@index([status, deletedAt, createdAt])
 }
 
 model ProductImage {
@@ -1478,10 +1542,68 @@ model RFQ {
   currency           Currency?       @relation(fields: [currencyId], references: [id])
   attachments        RFQAttachment[]
   quotations         RFQQuotation[]
+  matchSnapshots     RfqMatchSnapshot[]
+  matchResults       RfqMatchResult[]
 
   @@index([buyerId])
   @@index([status])
   @@index([deletedAt])
+  @@index([buyerId, status, createdAt])
+  @@index([status, isPublic, expiresAt])
+  @@index([categoryId, status, createdAt])
+}
+
+model RfqMatchSnapshot {
+  id                String   @id @default(uuid())
+  rfqId             String
+  status            String   @default("READY")
+  strategy          String   @default("DETERMINISTIC")
+  usedAi            Boolean  @default(false)
+  providersUsed     String?  @db.Text
+  summary           String?  @db.Text
+  rfqSignals        String?  @db.Text
+  candidateCount    Int      @default(0)
+  matchCount        Int      @default(0)
+  generatedAt       DateTime @default(now())
+  expiresAt         DateTime?
+  errorMessage      String?  @db.Text
+
+  rfq               RFQ      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  results           RfqMatchResult[]
+
+  @@index([rfqId])
+  @@index([generatedAt])
+  @@index([expiresAt])
+}
+
+model RfqMatchResult {
+  id                  String   @id @default(uuid())
+  snapshotId          String
+  rfqId               String
+  companyId           String
+  productId           String
+  rank                Int
+  score               Int
+  baseScore           Int      @default(0)
+  aiScoreBonus        Int      @default(0)
+  keywordOverlap      Int      @default(0)
+  destinationMatch    Boolean  @default(false)
+  verifiedSupplier    Boolean  @default(false)
+  premiumSupplier     Boolean  @default(false)
+  signalMatches       String?  @db.Text
+  reasons             String?  @db.LongText
+  createdAt           DateTime @default(now())
+
+  snapshot            RfqMatchSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  rfq                 RFQ              @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  company             Company          @relation(fields: [companyId], references: [id])
+  product             Product          @relation(fields: [productId], references: [id])
+
+  @@unique([snapshotId, companyId])
+  @@index([snapshotId, rank])
+  @@index([rfqId])
+  @@index([companyId])
+  @@index([productId])
 }
 
 model RFQAttachment {
@@ -1529,6 +1651,9 @@ model RFQQuotation {
   @@index([inquiryId])
   @@index([companyId])
   @@index([status])
+  @@index([buyerId])
+  @@index([companyId, status, createdAt])
+  @@index([rfqId, companyId])
 }
 
 model RFQQuotationItem {
@@ -1616,6 +1741,7 @@ model Message {
   @@index([roomId])
   @@index([senderId])
   @@index([createdAt])
+  @@index([roomId, isDeleted, createdAt])
 }
 
 model MessageAttachment {
@@ -1661,6 +1787,7 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+  @@index([userId, isRead, createdAt])
 }
 
 model NotificationPreference {
@@ -1680,42 +1807,32 @@ model NotificationPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model BuyerVerification {
-  id                String                  @id @default(uuid())
-  userId            String                  @unique
-  companyName       String?
-  registrationNo    String?
-  businessLicenseNo String?
-  taxId             String?
-  website           String?
-  companyAddress    String?                 @db.Text
-  contactRole       String?
-  notes             String?                 @db.Text
-  documentUrls      String?                 @db.LongText
-  status            BuyerVerificationStatus @default(DRAFT)
-  submittedAt       DateTime?
-  reviewedAt        DateTime?
-  reviewedBy        String?
-  rejectionReason   String?                 @db.Text
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([status])
-}
-
 model KYCProfile {
   id                    String    @id @default(uuid())
   userId                String    @unique
   companyId             String?
   legalName             String?
+  identityDocumentType  String?
   passportNumber        String?
   nationalIdNumber      String?
+  personalCountry       String?
+  personalCity          String?
+  personalPostalCode    String?
+  personalAddress       String?   @db.Text
   businessLicenseNumber String?
   bankAccountName       String?
   bankAccountNumber     String?
   bankName              String?
+  bankAccountType       String?
+  bankCurrency          String?
+  bankBranchName        String?
+  bankBranchCode        String?
+  bankRoutingNumber     String?
+  bankSwiftCode         String?
+  bankIban              String?
+  bankCountry           String?
+  bankCity              String?
+  bankAddress           String?   @db.Text
   documentUrls          String?   @db.LongText
   notes                 String?   @db.Text
   riskLevel             String?   @default("MEDIUM")
@@ -1853,6 +1970,10 @@ model Payment {
   @@index([status])
   @@index([tradeOrderId])
   @@index([sampleOrderId])
+  @@index([invoiceId])
+  @@index([userId, status, createdAt])
+  @@index([tradeOrderId, status, createdAt])
+  @@index([sampleOrderId, status, createdAt])
 }
 
 model ManualPaymentRequest {
@@ -1929,6 +2050,8 @@ model TradeOrder {
   @@index([buyerId])
   @@index([supplierCompanyId])
   @@index([status])
+  @@index([buyerId, status, createdAt])
+  @@index([supplierCompanyId, status, createdAt])
 }
 
 model EscrowAccount {
@@ -2051,6 +2174,10 @@ model Shipment {
   @@index([supplierCompanyId])
   @@index([trackingNumber])
   @@index([status])
+  @@index([buyerId, status, updatedAt])
+  @@index([supplierCompanyId, status, updatedAt])
+  @@index([tradeOrderId, createdAt])
+  @@index([sampleOrderId, createdAt])
 }
 
 model ShipmentEvent {
@@ -2125,6 +2252,7 @@ model TransactionRating {
   id                  String    @id @default(uuid())
   tradeOrderId        String?
   sampleOrderId       String?
+  productId           String?
   authorUserId        String
   recipientUserId     String?
   recipientCompanyId  String?
@@ -2139,12 +2267,14 @@ model TransactionRating {
 
   tradeOrder       TradeOrder?  @relation(fields: [tradeOrderId], references: [id])
   sampleOrder      SampleOrder? @relation(fields: [sampleOrderId], references: [id])
+  product         Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
   authorUser       User         @relation("RatingAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
   recipientUser    User?        @relation("RatingRecipient", fields: [recipientUserId], references: [id])
   recipientCompany Company?     @relation("CompanyRatingRecipient", fields: [recipientCompanyId], references: [id])
 
   @@index([tradeOrderId])
   @@index([sampleOrderId])
+  @@index([productId])
   @@index([authorUserId])
   @@index([recipientUserId])
   @@index([recipientCompanyId])
@@ -2169,13 +2299,100 @@ model FraudAlert {
   updatedAt       DateTime         @updatedAt
 
   reportedBy    User         @relation("FraudReportedBy", fields: [reportedById], references: [id], onDelete: Cascade)
+  targetUser    User?        @relation("FraudTargetUser", fields: [targetUserId], references: [id])
   targetCompany Company?     @relation("FraudTargetCompany", fields: [targetCompanyId], references: [id])
   tradeOrder    TradeOrder?  @relation(fields: [tradeOrderId], references: [id])
   sampleOrder   SampleOrder? @relation(fields: [sampleOrderId], references: [id])
+  reviewedByUser User?       @relation("FraudReviewedByAdmin", fields: [reviewedBy], references: [id])
+  reviews       FraudReview[]
 
   @@index([status])
   @@index([targetCompanyId])
   @@index([targetUserId])
+}
+
+model FraudRiskHistory {
+  id                String           @id @default(uuid())
+  entityType        FraudEntityType
+  userId            String?
+  companyId         String?
+  actorUserId       String?
+  eventType         FraudEventType
+  sourceModule      String
+  title             String
+  summary           String?          @db.Text
+  payload           String?          @db.LongText
+  matchedRules      String?          @db.LongText
+  aiProvider        String?
+  aiSummary         String?          @db.Text
+  aiRaw             String?          @db.LongText
+  ruleScore         Int              @default(0)
+  aiScore           Int?
+  finalScore        Int              @default(0)
+  resultingScore    Int              @default(0)
+  resultingLevel    FraudRiskLevel
+  publicFlag        FraudPublicFlag?
+  restrictedActions String?          @db.LongText
+  ipAddress         String?
+  userAgent         String?          @db.Text
+  deviceFingerprint String?
+  triggeredAlert    Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+
+  user      User?    @relation("FraudUserHistory", fields: [userId], references: [id], onDelete: Cascade)
+  company   Company? @relation("FraudCompanyHistory", fields: [companyId], references: [id], onDelete: Cascade)
+  actorUser User?    @relation("FraudActorHistory", fields: [actorUserId], references: [id])
+  reviews   FraudReview[]
+
+  @@index([entityType, createdAt])
+  @@index([userId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([resultingLevel, createdAt])
+  @@index([eventType, createdAt])
+}
+
+model FraudReview {
+  id                 String               @id @default(uuid())
+  entityType         FraudEntityType
+  userId             String?
+  companyId          String?
+  alertId            String?
+  historyId          String?
+  reviewedById       String
+  decision           FraudReviewDecision
+  note               String?              @db.Text
+  requestedDocuments String?              @db.LongText
+  createdAt          DateTime             @default(now())
+
+  user       User?             @relation("FraudReviewedUser", fields: [userId], references: [id], onDelete: Cascade)
+  company    Company?          @relation("FraudReviewedCompany", fields: [companyId], references: [id], onDelete: Cascade)
+  alert      FraudAlert?       @relation(fields: [alertId], references: [id])
+  history    FraudRiskHistory? @relation(fields: [historyId], references: [id])
+  reviewedBy User              @relation("FraudReviewAdmin", fields: [reviewedById], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([decision, createdAt])
+}
+
+model FraudDeviceLog {
+  id                String         @id @default(uuid())
+  userId            String
+  ipAddress         String
+  userAgent         String?        @db.Text
+  deviceFingerprint String?
+  firstSeenAt       DateTime       @default(now())
+  lastSeenAt        DateTime       @default(now())
+  loginCount        Int            @default(0)
+  lastRiskLevel     FraudRiskLevel?
+  isFlagged         Boolean        @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ipAddress])
+  @@index([userId])
+  @@index([ipAddress])
+  @@index([lastRiskLevel])
 }
 
 model CreditProfile {
@@ -2599,6 +2816,26 @@ model AuditLog {
   @@index([action])
   @@index([module])
   @@index([createdAt])
+}
+
+model SystemEvent {
+  id         String              @id @default(uuid())
+  severity   SystemEventSeverity
+  category   SystemEventCategory
+  service    String
+  eventType  String
+  message    String              @db.Text
+  source     String?
+  status     String?
+  actorUserId String?
+  companyId  String?
+  details    String?             @db.LongText
+  createdAt  DateTime            @default(now())
+
+  @@index([category, createdAt])
+  @@index([service, createdAt])
+  @@index([severity, createdAt])
+  @@index([eventType, createdAt])
 }
 
 model SystemSetting {
@@ -3584,6 +3821,47 @@ model CompanyAnalytic {
   @@unique([companyId, date])
   @@index([companyId])
   @@index([date])
+}
+
+model B2BCompany {
+  id                         String                @id @default(uuid())
+  userId                     String                @unique
+  companyName                String
+  legalName                  String?
+  companyType                B2BCompanyType
+  registrationNumber         String?
+  taxNumber                  String?
+  country                    String
+  city                       String?
+  address                    String?               @db.Text
+  website                    String?
+  phone                      String
+  businessEmail              String
+  description                String?               @db.Text
+  logo                       String?
+  tradeLicenseFile           String?
+  taxDocumentFile            String?
+  buyerVerificationStatus    B2BVerificationStatus @default(PENDING)
+  buyerVerificationNote      String?               @db.Text
+  buyerVerifiedAt            DateTime?
+  buyerVerifiedBy            String?
+  supplierVerificationStatus B2BVerificationStatus @default(PENDING)
+  supplierVerificationNote   String?               @db.Text
+  supplierVerifiedAt         DateTime?
+  supplierVerifiedBy         String?
+  createdAt                  DateTime              @default(now())
+  updatedAt                  DateTime              @updatedAt
+
+  user                    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buyerVerifiedByUser     User? @relation("B2BCompanyBuyerVerifiedBy", fields: [buyerVerifiedBy], references: [id])
+  supplierVerifiedByUser  User? @relation("B2BCompanySupplierVerifiedBy", fields: [supplierVerifiedBy], references: [id])
+
+  @@index([companyType])
+  @@index([buyerVerificationStatus])
+  @@index([supplierVerificationStatus])
+  @@index([country])
+  @@index([buyerVerifiedBy])
+  @@index([supplierVerifiedBy])
 }
 
 model ProductAnalytic {

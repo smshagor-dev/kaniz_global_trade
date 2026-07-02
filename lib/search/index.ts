@@ -47,6 +47,14 @@ export async function initSearchIndexes(): Promise<void> {
     filterableAttributes: ['isActive'],
   })
 
+  const rfqIndex = meili.index(INDEXES.RFQS)
+  await rfqIndex.updateSettings({
+    searchableAttributes: ['productName', 'description', 'categoryName', 'destinationCountryName'],
+    filterableAttributes: ['status', 'categoryId', 'destinationCountryId', 'currencyId', 'buyerId'],
+    sortableAttributes: ['createdAt', 'quotationCount', 'expiresAt'],
+    displayedAttributes: ['id', 'productName', 'quantity', 'unit', 'budget', 'status', 'categoryId', 'categoryName', 'destinationCountryId', 'destinationCountryName', 'currencyId', 'currencyCode', 'quotationCount', 'createdAt', 'expiresAt'],
+  })
+
   console.log('✅ Meilisearch indexes initialized')
 }
 
@@ -64,6 +72,14 @@ export async function indexCompany(company: Record<string, unknown>): Promise<vo
 
 export async function removeCompanyFromIndex(companyId: string): Promise<void> {
   await meili.index(INDEXES.COMPANIES).deleteDocument(companyId)
+}
+
+export async function indexRFQ(rfq: Record<string, unknown>): Promise<void> {
+  await meili.index(INDEXES.RFQS).addDocuments([{ ...rfq, id: rfq.id }])
+}
+
+export async function removeRFQFromIndex(rfqId: string): Promise<void> {
+  await meili.index(INDEXES.RFQS).deleteDocument(rfqId)
 }
 
 export interface SearchParams {
@@ -85,6 +101,15 @@ export async function searchProducts(params: SearchParams) {
 
 export async function searchCompanies(params: SearchParams) {
   return meili.index(INDEXES.COMPANIES).search(params.q, {
+    filter: params.filter,
+    sort: params.sort,
+    page: params.page || 1,
+    hitsPerPage: params.hitsPerPage || 20,
+  })
+}
+
+export async function searchRFQs(params: SearchParams) {
+  return meili.index(INDEXES.RFQS).search(params.q, {
     filter: params.filter,
     sort: params.sort,
     page: params.page || 1,

@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db/prisma'
 import { createNotification } from '@/server/services/notification'
 import { sendInvoicePaidEmail } from '@/lib/email'
-import { NOWPaymentsIpnPayload, verifyNOWPaymentsIpnSignature } from '@/lib/payment/nowpayments'
+import { NOWPaymentsIpnPayload } from '@/lib/payment/nowpayments'
+import { assertPaymentStatusTransition, enforceWebhookIdempotency, verifyWebhookSignature } from '@/lib/payment/safety'
 import { failAdCampaignPayment, finalizeAdCampaignPayment } from '@/lib/advertising/payment'
+import { FraudEventType } from '@prisma/client'
+import { screenFraudEvent } from '@/lib/fraud/service'
+import { logPaymentStatusEvent, logPaymentWebhookFailureEvent } from '@/lib/monitoring/event-helpers'
 
 function parseMetadata(value: string | null | undefined): Record<string, string> {
   if (!value) return {}
@@ -15,6 +19,13 @@ function parseMetadata(value: string | null | undefined): Record<string, string>
 }
 
 async function markPaymentAsFailed(paymentId: string, reason: string, payload: NOWPaymentsIpnPayload) {
+  const existing = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    select: { status: true },
+  })
+  if (!existing) return
+  assertPaymentStatusTransition(existing.status, 'FAILED')
+
   await prisma.payment.update({
     where: { id: paymentId },
     data: {
@@ -89,6 +100,18 @@ async function finalizeTradeOrder(paymentId: string, tradeOrderId: string, paylo
         status: 'HELD',
         fundedAt: new Date(),
         termsAccepted: true,
+      },
+    }),
+    prisma.escrowTransaction.updateMany({
+      where: {
+        tradeOrderId: order.id,
+        escrowAccountId: order.escrowAccount.id,
+        type: 'FUNDING',
+        status: 'PENDING',
+      },
+      data: {
+        paymentId,
+        status: 'COMPLETED',
       },
     }),
     prisma.tradeOrder.update({
@@ -215,12 +238,11 @@ async function finalizeSubscription(paymentId: string, payload: NOWPaymentsIpnPa
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text()
-    const isValid = await verifyNOWPaymentsIpnSignature(rawBody, req.headers.get('x-nowpayments-sig'))
-    if (!isValid) {
-      return NextResponse.json({ success: false, message: 'Invalid NOWPayments signature' }, { status: 401 })
-    }
-
-    const payload = JSON.parse(rawBody) as NOWPaymentsIpnPayload
+    const payload = await verifyWebhookSignature({
+      provider: 'NOWPAYMENTS',
+      req,
+      rawBody,
+    }) as NOWPaymentsIpnPayload
     const orderId = String(payload.order_id || '')
     if (!orderId) {
       return NextResponse.json({ success: false, message: 'order_id missing' }, { status: 400 })
@@ -231,7 +253,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Payment not found' }, { status: 404 })
     }
 
-    if (payment.status === 'PAID') {
+    const eventKey = `NOWPAYMENTS:${String(payload.payment_id || orderId)}:${String(payload.payment_status || 'unknown')}`
+    const idempotency = await enforceWebhookIdempotency({
+      paymentId: payment.id,
+      eventKey,
+      metadata: payment.metadata,
+    })
+
+    if (idempotency.duplicate || payment.status === 'PAID') {
       return NextResponse.json({ success: true, alreadyProcessed: true })
     }
 
@@ -239,6 +268,7 @@ export async function POST(req: NextRequest) {
     const metadata = parseMetadata(payment.metadata)
 
     if (status === 'finished' || status === 'confirmed' || status === 'sending') {
+      assertPaymentStatusTransition(payment.status, 'PAID')
       if (metadata.kind === 'AD_CAMPAIGN') {
         await finalizeAdCampaignPayment(payment.id, payload, 'NOWPAYMENTS')
       } else if (metadata.kind === 'TRADE_ORDER' && payment.tradeOrderId) {
@@ -248,15 +278,54 @@ export async function POST(req: NextRequest) {
       } else if (payment.sampleOrderId) {
         await finalizeSampleOrder(payment.id, payment.sampleOrderId, payload)
       }
+      await screenFraudEvent({
+        req,
+        actorUserId: payment.userId,
+        userId: payment.userId,
+        companyId: metadata.supplierCompanyId || metadata.companyId,
+        eventType: FraudEventType.PAYMENT_ACTIVITY,
+        sourceModule: 'payments/nowpayments/callback',
+        title: 'NOWPayments payment confirmed',
+        summary: `Crypto callback completed for ${metadata.kind || 'marketplace'} flow.`,
+        payload: { orderId, status, kind: metadata.kind, amount: payment.amount.toString(), currency: payment.currency },
+      })
+      await logPaymentStatusEvent({
+        provider: 'NOWPAYMENTS',
+        paymentId: payment.id,
+        status: 'PAID',
+        actorUserId: payment.userId,
+        companyId: metadata.supplierCompanyId || metadata.companyId,
+        details: { orderId, callbackStatus: status, kind: metadata.kind },
+      })
       return NextResponse.json({ success: true })
     }
 
     if (['failed', 'refunded', 'expired'].includes(status)) {
+      assertPaymentStatusTransition(payment.status, 'FAILED')
       if (metadata.kind === 'AD_CAMPAIGN') {
         await failAdCampaignPayment(payment.id, `NOWPayments status: ${status}`, payload, 'FAILED')
       } else {
         await markPaymentAsFailed(payment.id, `NOWPayments status: ${status}`, payload)
       }
+      await screenFraudEvent({
+        req,
+        actorUserId: payment.userId,
+        userId: payment.userId,
+        companyId: metadata.supplierCompanyId || metadata.companyId,
+        eventType: FraudEventType.PAYMENT_ACTIVITY,
+        sourceModule: 'payments/nowpayments/callback',
+        title: 'NOWPayments payment failed',
+        summary: `Crypto callback returned ${status}.`,
+        payload: { orderId, status, kind: metadata.kind, amount: payment.amount.toString(), currency: payment.currency },
+      })
+      await logPaymentStatusEvent({
+        provider: 'NOWPAYMENTS',
+        paymentId: payment.id,
+        status: 'FAILED',
+        actorUserId: payment.userId,
+        companyId: metadata.supplierCompanyId || metadata.companyId,
+        details: { orderId, callbackStatus: status, kind: metadata.kind },
+      })
       return NextResponse.json({ success: true })
     }
 
@@ -272,7 +341,20 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, pending: true })
   } catch (error) {
+    if (error instanceof Error && error.message === 'Invalid NOWPayments signature') {
+      await logPaymentWebhookFailureEvent({
+        provider: 'NOWPAYMENTS',
+        message: 'NOWPayments callback rejected due to invalid signature.',
+        reason: error.message,
+      })
+      return NextResponse.json({ success: false, message: error.message }, { status: 401 })
+    }
     console.error('NOWPayments callback error:', error)
+    await logPaymentWebhookFailureEvent({
+      provider: 'NOWPAYMENTS',
+      message: 'NOWPayments callback processing failed.',
+      reason: error instanceof Error ? error.message : 'unknown_error',
+    })
     return NextResponse.json({ success: false, message: 'NOWPayments callback failed' }, { status: 500 })
   }
 }

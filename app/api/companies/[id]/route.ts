@@ -4,7 +4,9 @@ import prisma from '@/lib/db/prisma'
 import { getAuthUser, requireCompanyAccess, isAdmin, ApiError } from '@/lib/permissions'
 import { successResponse, errorResponse, handleApiError } from '@/lib/utils/api'
 import { logUpdate, logDelete } from '@/lib/utils/audit'
-import { indexCompany, removeCompanyFromIndex } from '@/lib/search'
+import { PUBLIC_CACHE_TTL, supplierProfileCacheKey, rememberPublicCache, invalidateCompanyCaches } from '@/lib/cache/public'
+import { scheduleSearchSync } from '@/lib/search/sync'
+import { trackCompanyProfileView } from '@/lib/analytics/tracking'
 
 const updateCompanySchema = z.object({
   name: z.string().min(2).max(200).optional(),
@@ -38,7 +40,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const company = await prisma.company.findFirst({
+    const authUser = await getAuthUser(req)
+    const loadCompany = () => prisma.company.findFirst({
       where: {
         OR: [{ id }, { slug: id }],
         deletedAt: null,
@@ -66,22 +69,15 @@ export async function GET(
       },
     })
 
+    const company = authUser
+      ? await loadCompany()
+      : await rememberPublicCache(supplierProfileCacheKey(id), PUBLIC_CACHE_TTL.supplierProfile, loadCompany)
+
     if (!company) return errorResponse('Company not found', 404)
 
-    // Increment view count (non-blocking)
-    prisma.company.update({
-      where: { id: company.id },
-      data: { totalViews: { increment: 1 } },
-    }).catch(() => {})
-
-    // Log analytics
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    prisma.companyAnalytic.upsert({
-      where: { companyId_date: { companyId: company.id, date: today } },
-      create: { companyId: company.id, date: today, profileViews: 1 },
-      update: { profileViews: { increment: 1 } },
-    }).catch(() => {})
+    if (!authUser) {
+      trackCompanyProfileView(company.id).catch(() => {})
+    }
 
     return successResponse(company)
   } catch (error) {
@@ -109,19 +105,8 @@ export async function PUT(
 
     await logUpdate(authUser.userId, 'companies', 'Company', id, existing, data)
 
-    // Re-index
-    try {
-      await indexCompany({
-        id: updated.id,
-        name: updated.name,
-        slug: updated.slug,
-        businessType: updated.businessType,
-        countryId: updated.countryId,
-        verificationStatus: updated.verificationStatus,
-        status: updated.status,
-        mainProducts: updated.mainProducts,
-      })
-    } catch { /* non-critical */ }
+    await invalidateCompanyCaches(updated.id, updated.slug)
+    await scheduleSearchSync('company', updated.id, 'upsert')
 
     return successResponse(updated, 'Company updated')
   } catch (error) {
@@ -144,7 +129,8 @@ export async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    await removeCompanyFromIndex(id)
+    await invalidateCompanyCaches(id)
+    await scheduleSearchSync('company', id, 'remove')
     await logDelete(authUser.userId, 'companies', 'Company', id)
 
     return successResponse(null, 'Company deleted')

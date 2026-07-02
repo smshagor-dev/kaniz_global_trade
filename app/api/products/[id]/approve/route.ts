@@ -4,7 +4,8 @@ import prisma from '@/lib/db/prisma'
 import { requireAdmin, ApiError } from '@/lib/permissions'
 import { successResponse, handleApiError } from '@/lib/utils/api'
 import { logApprove, logReject } from '@/lib/utils/audit'
-import { indexProduct, removeProductFromIndex } from '@/lib/search'
+import { invalidateProductCaches } from '@/lib/cache/public'
+import { scheduleSearchSync } from '@/lib/search/sync'
 import { createNotification } from '@/server/services/notification'
 import { sendProductApprovalEmail } from '@/lib/email'
 
@@ -56,27 +57,12 @@ export async function POST(
 
     if (action === 'APPROVE') {
       await logApprove(authUser.userId, 'products', 'Product', id)
-
-      // Index in search
-      try {
-        await indexProduct({
-          id: product.id,
-          name: product.name,
-          slug: product.slug,
-          shortDescription: product.shortDescription,
-          companyId: product.companyId,
-          categoryId: product.categoryId,
-          priceMin: product.priceMin?.toString(),
-          priceMax: product.priceMax?.toString(),
-          moq: product.moq?.toString(),
-          status: 'APPROVED',
-          isFeatured: product.isFeatured,
-        })
-      } catch { /* non-critical */ }
     } else {
       await logReject(authUser.userId, 'products', 'Product', id, reason)
-      await removeProductFromIndex(id)
     }
+
+    await invalidateProductCaches(product.id, product.slug)
+    await scheduleSearchSync('product', product.id, action === 'APPROVE' ? 'upsert' : 'remove')
 
     // Notify supplier owner
     const owner = product.company.companyUsers[0]?.user

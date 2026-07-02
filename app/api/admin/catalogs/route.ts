@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy: [{ createdAt: 'desc' }],
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: {
           images: { where: { isPrimary: true }, take: 1 },
           company: { select: { id: true, name: true } },

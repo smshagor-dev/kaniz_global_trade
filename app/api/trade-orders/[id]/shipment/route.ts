@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, ROLES, ApiError } from '@/lib/permissions'
+import { requireAuth, ROLES, ApiError, requireVerifiedSupplier } from '@/lib/permissions'
 import { buildTrackingUrl, syncCarrierTracking } from '@/lib/shipping/tracking'
 import { createNotification } from '@/server/services/notification'
 import { handleApiError, successResponse } from '@/lib/utils/api'
+import { logShipmentStatusEvent } from '@/lib/monitoring/event-helpers'
 
 const shipmentSchema = z.object({
   carrier: z.string().min(2),
@@ -71,6 +72,9 @@ export async function POST(
     if (order.supplierCompanyId !== authUser.companyId && !authUser.roles.includes(ROLES.SUPER_ADMIN)) {
       throw new ApiError(403, 'Supplier access required')
     }
+    if (!authUser.roles.includes(ROLES.SUPER_ADMIN)) {
+      await requireVerifiedSupplier(authUser, order.supplierCompanyId)
+    }
     if (!['ESCROW_FUNDED', 'PROCESSING', 'SHIPPED'].includes(order.status)) {
       throw new ApiError(409, 'Shipment can only be created after escrow is funded and before the order is completed')
     }
@@ -129,6 +133,18 @@ export async function POST(
       title: 'Shipment Created',
       message: `Your order ${order.productName} has been shipped via ${data.carrier.toUpperCase()}.`,
       data: { tradeOrderId: order.id, shipmentId: shipment.id, trackingNumber: shipment.trackingNumber },
+    })
+
+    await logShipmentStatusEvent({
+      shipmentId: shipment.id,
+      tradeOrderId: order.id,
+      status: shipment.status,
+      actorUserId: authUser.userId,
+      companyId: order.supplierCompanyId,
+      details: {
+        trackingNumber: shipment.trackingNumber,
+        carrier: shipment.carrier,
+      },
     })
 
     return successResponse(shipment, 'Shipment created', undefined, 201)
@@ -226,6 +242,19 @@ export async function PATCH(
       title: 'Shipment Updated',
       message: description,
       data: { tradeOrderId: order.id, shipmentId: shipment.id, status: nextStatus },
+    })
+
+    await logShipmentStatusEvent({
+      shipmentId: shipment.id,
+      tradeOrderId: order.id,
+      status: nextStatus,
+      actorUserId: authUser.userId,
+      companyId: order.supplierCompanyId,
+      details: {
+        action: data.action,
+        description,
+        location,
+      },
     })
 
     return successResponse(updated, 'Shipment updated')

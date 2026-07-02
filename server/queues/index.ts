@@ -1,4 +1,4 @@
-import { Queue, Worker, type ConnectionOptions } from 'bullmq'
+import { Worker } from 'bullmq'
 import prisma from '@/lib/db/prisma'
 import {
   sendVerificationEmail, sendPasswordResetEmail,
@@ -6,30 +6,11 @@ import {
   sendQuotationEmail, sendProductApprovalEmail,
   sendSubscriptionExpiryEmail,
 } from '@/lib/email'
-import { indexProduct, indexCompany } from '@/lib/search'
+import { processSearchSyncJob } from '@/lib/search/sync'
+import { analyticsQueue, emailQueue, searchDeadLetterQueue } from '@/server/queues/client'
+import { connection } from '@/server/queues/config'
+import { recordQueueFailure } from '@/server/queues/failure-log'
 
-function createBullMqConnection(): ConnectionOptions {
-  const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379')
-
-  return {
-    host: redisUrl.hostname,
-    port: Number(redisUrl.port || 6379),
-    username: redisUrl.username || undefined,
-    password: redisUrl.password || undefined,
-    db: redisUrl.pathname ? Number(redisUrl.pathname.slice(1) || 0) : 0,
-    maxRetriesPerRequest: null,
-  }
-}
-
-const connection = createBullMqConnection()
-
-// ── Queue Definitions ───────────────────────────────────────
-export const emailQueue     = new Queue('emails',     { connection })
-export const searchQueue    = new Queue('search',     { connection })
-export const notifQueue     = new Queue('notifications', { connection })
-export const analyticsQueue = new Queue('analytics', { connection })
-
-// ── Email Worker ────────────────────────────────────────────
 const emailWorker = new Worker('emails', async (job) => {
   const { type, data } = job.data
 
@@ -60,18 +41,10 @@ const emailWorker = new Worker('emails', async (job) => {
   }
 }, { connection, concurrency: 5 })
 
-// ── Search Indexing Worker ──────────────────────────────────
 const searchWorker = new Worker('search', async (job) => {
-  const { type, data } = job.data
-
-  if (type === 'index_product') {
-    await indexProduct(data)
-  } else if (type === 'index_company') {
-    await indexCompany(data)
-  }
+  await processSearchSyncJob(job.data.entityType, job.data.entityId, job.data.action)
 }, { connection, concurrency: 10 })
 
-// ── Analytics Worker ─────────────────────────────────────────
 const analyticsWorker = new Worker('analytics', async (job) => {
   const { type, data } = job.data
   const today = new Date()
@@ -104,9 +77,7 @@ const analyticsWorker = new Worker('analytics', async (job) => {
   }
 }, { connection, concurrency: 20 })
 
-// ── Subscription Expiry Cron ─────────────────────────────────
 export async function scheduleSubscriptionChecks(): Promise<void> {
-  // Run daily at midnight
   await emailQueue.add(
     'check-expiring-subscriptions',
     { type: 'check_subscriptions' },
@@ -117,11 +88,40 @@ export async function scheduleSubscriptionChecks(): Promise<void> {
   )
 }
 
-// Error handlers
-emailWorker.on('failed',     (job, err) => console.error(`Email job ${job?.id} failed:`, err))
-searchWorker.on('failed',    (job, err) => console.error(`Search job ${job?.id} failed:`, err))
-analyticsWorker.on('failed', (job, err) => console.error(`Analytics job ${job?.id} failed:`, err))
+async function handleWorkerFailure(
+  queueName: string,
+  job: { id?: string; name: string; attemptsMade: number; data: unknown; opts?: { attempts?: number } } | undefined,
+  err: Error
+) {
+  console.error(`${queueName} job ${job?.id} failed:`, err)
 
-emailWorker.on('completed',  (job) => console.log(`Email job ${job.id} completed`))
+  await recordQueueFailure({
+    queue: queueName,
+    jobId: String(job?.id || 'unknown'),
+    jobName: job?.name || 'unknown',
+    attemptsMade: job?.attemptsMade || 0,
+    failedReason: err.message,
+    payload: job?.data,
+    failedAt: new Date().toISOString(),
+  })
 
-export { emailWorker, searchWorker, analyticsWorker }
+  if (queueName === 'search' && job && job.attemptsMade >= (job.opts?.attempts || 1)) {
+    const payload = typeof job.data === 'object' && job.data !== null
+      ? job.data as Record<string, unknown>
+      : { data: job.data }
+
+    await searchDeadLetterQueue.add(
+      'dead-search-document',
+      { ...payload, failedReason: err.message, failedAt: new Date().toISOString() },
+      { jobId: `dead:${job.id}` }
+    )
+  }
+}
+
+emailWorker.on('failed', (job, err) => void handleWorkerFailure('emails', job, err))
+searchWorker.on('failed', (job, err) => void handleWorkerFailure('search', job, err))
+analyticsWorker.on('failed', (job, err) => void handleWorkerFailure('analytics', job, err))
+
+emailWorker.on('completed', (job) => console.log(`Email job ${job.id} completed`))
+
+export { emailWorker, searchWorker, analyticsWorker, analyticsQueue }

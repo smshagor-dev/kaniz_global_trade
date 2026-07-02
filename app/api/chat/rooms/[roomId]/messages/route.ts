@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, ApiError } from '@/lib/permissions'
+import { requireAuth, requireChatRoomAccess } from '@/lib/permissions'
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 
 export async function GET(
@@ -13,26 +13,24 @@ export async function GET(
     const { searchParams } = new URL(req.url)
     const { page, limit, skip } = getPaginationParams(searchParams)
 
-    // Verify participant
-    const participant = await prisma.chatParticipant.findUnique({
-      where: { roomId_userId: { roomId, userId: authUser.userId } },
+    await requireChatRoomAccess({
+      user: authUser,
+      roomId,
     })
-
-    if (!participant || participant.isBlocked) throw new ApiError(403, 'Access denied')
 
     const [messages, total] = await Promise.all([
       prisma.message.findMany({
         where: { roomId, isDeleted: false },
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: {
           sender: { select: { id: true, firstName: true, lastName: true, avatar: true } },
           attachments: true,
           readReceipts: { select: { userId: true, readAt: true } },
         },
       }),
-      prisma.message.count({ where: { roomId } }),
+      prisma.message.count({ where: { roomId, isDeleted: false } }),
     ])
 
     // Mark all as read

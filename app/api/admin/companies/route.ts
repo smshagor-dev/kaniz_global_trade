@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: {
           country: { select: { name: true, code: true } },
           creditProfile: true,

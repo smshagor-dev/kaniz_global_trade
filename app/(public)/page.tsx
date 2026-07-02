@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import prisma from '@/lib/db/prisma'
+import { PUBLIC_CACHE_TTL, homepageSnapshotCacheKey, rememberPublicCache } from '@/lib/cache/public'
 import { MarketplaceDiscovery } from '@/components/public/home/marketplace-discovery'
 import { HomeMarketplaceFeed } from '@/components/public/home/home-marketplace-feed'
 import { getMarketplaceFeedPage, normalizeMarketplaceQuery } from '@/lib/home-marketplace-feed'
@@ -190,117 +191,119 @@ async function getHomeSettings(): Promise<HomeSettings> {
 }
 
 async function getHomeData(settings: HomeSettings) {
-  const [categories, featuredProducts, verifiedCompanies, sponsoredCampaigns, recentProducts, stats] = await Promise.all([
-    prisma.category.findMany({
-      where: { isActive: true, parentId: null, approvalStatus: 'APPROVED' },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      take: settings.categoryLimit,
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        icon: true,
-        image: true,
-        _count: { select: { products: { where: { status: 'APPROVED', deletedAt: null } } } },
-        subcategories: {
-          where: { isActive: true, approvalStatus: 'APPROVED' },
-          orderBy: [{ name: 'asc' }],
-          take: 5,
-          select: { id: true, name: true, slug: true },
-        },
-      },
-    }) as Promise<HomeCategory[]>,
-    prisma.product.findMany({
-      where: {
-        status: 'APPROVED',
-        isFeatured: true,
-        deletedAt: null,
-        category: { approvalStatus: 'APPROVED', isActive: true },
-        AND: [
-          {
-            OR: [
-              { subcategoryId: null },
-              { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
-            ],
-          },
-        ],
-      },
-      take: settings.featuredProductLimit,
-      orderBy: [{ totalViews: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        images: { where: { isPrimary: true }, take: 1 },
-        company: { select: { name: true, slug: true, verificationStatus: true } },
-        category: { select: { name: true } },
-      },
-    }),
-    prisma.company.findMany({
-      where: { status: 'ACTIVE', isVerified: true, deletedAt: null },
-      take: settings.companyLimit,
-      orderBy: [{ isPremium: 'desc' }, { totalViews: 'desc' }],
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        logo: true,
-        businessType: true,
-        verificationStatus: true,
-        mainProducts: true,
-        totalInquiries: true,
-        country: { select: { name: true, flag: true } },
-        _count: { select: { products: { where: { status: 'APPROVED' } } } },
-      },
-    }),
-    prisma.adCampaign.findMany({
-      where: {
-        status: 'ACTIVE',
-        startsAt: { lte: new Date() },
-        endsAt: { gte: new Date() },
-      },
-      take: settings.campaignLimit,
-      orderBy: [{ bidAmount: 'desc' }],
-      include: {
-        company: { select: { name: true, slug: true } },
-        product: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            images: { where: { isPrimary: true }, take: 1 },
+  return rememberPublicCache(homepageSnapshotCacheKey(), PUBLIC_CACHE_TTL.homepage, async () => {
+    const [categories, featuredProducts, verifiedCompanies, sponsoredCampaigns, recentProducts, stats] = await Promise.all([
+      prisma.category.findMany({
+        where: { isActive: true, parentId: null, approvalStatus: 'APPROVED' },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+        take: settings.categoryLimit,
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          icon: true,
+          image: true,
+          _count: { select: { products: { where: { status: 'APPROVED', deletedAt: null } } } },
+          subcategories: {
+            where: { isActive: true, approvalStatus: 'APPROVED' },
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take: 5,
+            select: { id: true, name: true, slug: true },
           },
         },
-      },
-    }),
-    prisma.product.findMany({
-      where: {
-        status: 'APPROVED',
-        deletedAt: null,
-        category: { approvalStatus: 'APPROVED', isActive: true },
-        AND: [
-          {
-            OR: [
-              { subcategoryId: null },
-              { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
-            ],
+      }) as Promise<HomeCategory[]>,
+      prisma.product.findMany({
+        where: {
+          status: 'APPROVED',
+          isFeatured: true,
+          deletedAt: null,
+          category: { approvalStatus: 'APPROVED', isActive: true },
+          AND: [
+            {
+              OR: [
+                { subcategoryId: null },
+                { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
+              ],
+            },
+          ],
+        },
+        take: settings.featuredProductLimit,
+        orderBy: [{ totalViews: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        include: {
+          images: { where: { isPrimary: true }, take: 1 },
+          company: { select: { name: true, slug: true, verificationStatus: true } },
+          category: { select: { name: true } },
+        },
+      }),
+      prisma.company.findMany({
+        where: { status: 'ACTIVE', isVerified: true, deletedAt: null },
+        take: settings.companyLimit,
+        orderBy: [{ isPremium: 'desc' }, { totalViews: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logo: true,
+          businessType: true,
+          verificationStatus: true,
+          mainProducts: true,
+          totalInquiries: true,
+          country: { select: { name: true, flag: true } },
+          _count: { select: { products: { where: { status: 'APPROVED' } } } },
+        },
+      }),
+      prisma.adCampaign.findMany({
+        where: {
+          status: 'ACTIVE',
+          startsAt: { lte: new Date() },
+          endsAt: { gte: new Date() },
+        },
+        take: settings.campaignLimit,
+        orderBy: [{ bidAmount: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        include: {
+          company: { select: { name: true, slug: true } },
+          product: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              images: { where: { isPrimary: true }, take: 1 },
+            },
           },
-        ],
-      },
-      take: settings.recentProductLimit,
-      orderBy: [{ createdAt: 'desc' }],
-      include: {
-        images: { where: { isPrimary: true }, take: 1 },
-        company: { select: { name: true, slug: true, verificationStatus: true } },
-        category: { select: { name: true } },
-      },
-    }),
-    Promise.all([
-      prisma.company.count({ where: { status: 'ACTIVE', deletedAt: null } }),
-      prisma.product.count({ where: { status: 'APPROVED', deletedAt: null } }),
-      prisma.user.count({ where: { deletedAt: null } }),
-      prisma.rFQ.count({ where: { status: 'OPEN' } }),
-    ]),
-  ])
+        },
+      }),
+      prisma.product.findMany({
+        where: {
+          status: 'APPROVED',
+          deletedAt: null,
+          category: { approvalStatus: 'APPROVED', isActive: true },
+          AND: [
+            {
+              OR: [
+                { subcategoryId: null },
+                { subcategory: { approvalStatus: 'APPROVED', isActive: true } },
+              ],
+            },
+          ],
+        },
+        take: settings.recentProductLimit,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: {
+          images: { where: { isPrimary: true }, take: 1 },
+          company: { select: { name: true, slug: true, verificationStatus: true } },
+          category: { select: { name: true } },
+        },
+      }),
+      Promise.all([
+        prisma.company.count({ where: { status: 'ACTIVE', deletedAt: null } }),
+        prisma.product.count({ where: { status: 'APPROVED', deletedAt: null } }),
+        prisma.user.count({ where: { deletedAt: null } }),
+        prisma.rFQ.count({ where: { status: 'OPEN', deletedAt: null } }),
+      ]),
+    ])
 
-  return { categories, featuredProducts, verifiedCompanies, sponsoredCampaigns, recentProducts, stats }
+    return { categories, featuredProducts, verifiedCompanies, sponsoredCampaigns, recentProducts, stats }
+  })
 }
 
 export default async function HomePage({ searchParams }: HomePageProps) {

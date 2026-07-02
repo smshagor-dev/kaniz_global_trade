@@ -1,5 +1,6 @@
 import prisma from '@/lib/db/prisma'
 import { expandMarketplaceSearchQuery } from '@/lib/ai/google-marketplace-search'
+import { PUBLIC_CACHE_TTL, homepageCategoriesCacheKey, marketplaceFeedCacheKey, rememberPublicCache } from '@/lib/cache/public'
 
 export const HOME_MARKETPLACE_BATCH_SIZE = 12
 export const HOME_MARKETPLACE_FOOTER_REVEAL_COUNT = 36
@@ -52,6 +53,7 @@ export type MarketplaceFeedProduct = {
     name: string
     slug: string
     verificationStatus: string | null
+    fraudPublicFlag: string | null
     country: {
       name: string
       code: string | null
@@ -180,33 +182,39 @@ function buildFeedOrderBy(sort: MarketplaceSort) {
 }
 
 export async function getMarketplaceFeedCategories(limit = 10): Promise<MarketplaceFeedCategory[]> {
-  const categories = await prisma.category.findMany({
-    where: { isActive: true, parentId: null, approvalStatus: 'APPROVED' },
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    take: limit,
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      _count: {
+  return rememberPublicCache(
+    homepageCategoriesCacheKey(limit),
+    PUBLIC_CACHE_TTL.homepageCategories,
+    async () => {
+      const categories = await prisma.category.findMany({
+        where: { isActive: true, parentId: null, approvalStatus: 'APPROVED' },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+        take: limit,
         select: {
-          products: {
-            where: {
-              status: 'APPROVED',
-              deletedAt: null,
+          id: true,
+          name: true,
+          slug: true,
+          _count: {
+            select: {
+              products: {
+                where: {
+                  status: 'APPROVED',
+                  deletedAt: null,
+                },
+              },
             },
           },
         },
-      },
-    },
-  })
+      })
 
-  return categories.map((category) => ({
-    id: category.id,
-    name: category.name,
-    slug: category.slug,
-    productCount: category._count.products,
-  }))
+      return categories.map((category) => ({
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        productCount: category._count.products,
+      }))
+    }
+  )
 }
 
 export async function getMarketplaceFeedPage(
@@ -224,90 +232,103 @@ export async function getMarketplaceFeedPage(
   const where = await buildFeedWhere(query)
   const orderBy = buildFeedOrderBy(query.sort)
 
-  const [products, total] = await Promise.all([
-    prisma.product.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy,
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        shortDescription: true,
-        moq: true,
-        moqUnit: true,
-        priceMin: true,
-        priceMax: true,
-        totalViews: true,
-        totalInquiries: true,
-        isFeatured: true,
-        images: {
-          where: { isPrimary: true },
-          take: 1,
-          select: { url: true, alt: true },
-        },
-        category: {
+  return rememberPublicCache(
+    marketplaceFeedCacheKey({
+      categoryId: query.categoryId,
+      page: query.page,
+      q: query.q,
+      sort: query.sort,
+      limit,
+    }),
+    PUBLIC_CACHE_TTL.homepage,
+    async () => {
+      const [products, total] = await Promise.all([
+        prisma.product.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: [...orderBy, { id: 'desc' as const }],
           select: {
             id: true,
-            name: true,
             slug: true,
-          },
-        },
-        currency: {
-          select: {
-            code: true,
-            symbol: true,
-          },
-        },
-        company: {
-          select: {
-            id: true,
             name: true,
-            slug: true,
-            verificationStatus: true,
-            country: {
+            shortDescription: true,
+            moq: true,
+            moqUnit: true,
+            priceMin: true,
+            priceMax: true,
+            totalViews: true,
+            totalInquiries: true,
+            isFeatured: true,
+            images: {
+              where: { isPrimary: true },
+              take: 1,
+              select: { url: true, alt: true },
+            },
+            category: {
               select: {
+                id: true,
                 name: true,
+                slug: true,
+              },
+            },
+            currency: {
+              select: {
                 code: true,
+                symbol: true,
+              },
+            },
+            company: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                verificationStatus: true,
+                fraudPublicFlag: true,
+                country: {
+                  select: {
+                    name: true,
+                    code: true,
+                  },
+                },
               },
             },
           },
-        },
-      },
-    }),
-    prisma.product.count({ where }),
-  ])
+        }),
+        prisma.product.count({ where }),
+      ])
 
-  const totalPages = Math.max(1, Math.ceil(total / limit))
+      const totalPages = Math.max(1, Math.ceil(total / limit))
 
-  return {
-    items: products.map((product) => ({
-      id: product.id,
-      slug: product.slug,
-      name: product.name,
-      shortDescription: product.shortDescription,
-      moq: serializeDecimal(product.moq),
-      moqUnit: product.moqUnit,
-      priceMin: serializeDecimal(product.priceMin),
-      priceMax: serializeDecimal(product.priceMax),
-      totalViews: product.totalViews,
-      totalInquiries: product.totalInquiries,
-      isFeatured: product.isFeatured,
-      image: product.images[0]
-        ? {
-            url: product.images[0].url,
-            alt: product.images[0].alt,
-          }
-        : null,
-      category: product.category,
-      currency: product.currency,
-      company: product.company,
-    })),
-    total,
-    page: query.page,
-    limit,
-    totalPages,
-    hasMore: query.page < totalPages,
-  }
+      return {
+        items: products.map((product) => ({
+          id: product.id,
+          slug: product.slug,
+          name: product.name,
+          shortDescription: product.shortDescription,
+          moq: serializeDecimal(product.moq),
+          moqUnit: product.moqUnit,
+          priceMin: serializeDecimal(product.priceMin),
+          priceMax: serializeDecimal(product.priceMax),
+          totalViews: product.totalViews,
+          totalInquiries: product.totalInquiries,
+          isFeatured: product.isFeatured,
+          image: product.images[0]
+            ? {
+                url: product.images[0].url,
+                alt: product.images[0].alt,
+              }
+            : null,
+          category: product.category,
+          currency: product.currency,
+          company: product.company,
+        })),
+        total,
+        page: query.page,
+        limit,
+        totalPages,
+        hasMore: query.page < totalPages,
+      }
+    }
+  )
 }

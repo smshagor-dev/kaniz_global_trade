@@ -1,5 +1,6 @@
 import prisma from '@/lib/db/prisma'
 import { AuditAction } from '@prisma/client'
+import { recordSystemEvent } from '@/lib/monitoring/system-events'
 
 interface AuditLogParams {
   userId?: string
@@ -28,6 +29,24 @@ export async function createAuditLog(params: AuditLogParams): Promise<void> {
         userAgent: params.userAgent,
       },
     })
+
+    if (params.module.startsWith('admin') || ['APPROVE', 'REJECT', 'SUSPEND', 'ACTIVATE'].includes(params.action)) {
+      await recordSystemEvent({
+        severity: 'INFO',
+        category: 'ADMIN',
+        service: 'audit',
+        eventType: `audit_${params.action.toLowerCase()}`,
+        message: `Audit event recorded for ${params.module}.`,
+        source: params.module,
+        actorUserId: params.userId,
+        details: {
+          action: params.action,
+          module: params.module,
+          targetType: params.targetType,
+          targetId: params.targetId,
+        },
+      })
+    }
   } catch (err) {
     // Don't let audit log failures break the main flow
     console.error('Audit log error:', err)

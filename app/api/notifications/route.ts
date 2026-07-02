@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ isRead: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
       }),
       prisma.notification.count({ where }),
       prisma.notification.count({ where: { userId: authUser.userId, isRead: false } }),

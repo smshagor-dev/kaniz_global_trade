@@ -14,6 +14,14 @@ const io = new SocketServer(httpServer, {
   transports: ['websocket', 'polling'],
 })
 
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    service: 'socket',
+    generatedAt: new Date().toISOString(),
+  })
+})
+
 // Make io globally accessible for notification service
 global.io = io
 

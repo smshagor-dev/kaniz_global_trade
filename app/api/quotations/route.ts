@@ -1,11 +1,15 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/db/prisma'
-import { requireAuth, requireCompanyAccess, ROLES, ApiError } from '@/lib/permissions'
+import { requireAuth, requireCompanyAccess, ROLES, ApiError, isAdmin, requireRole, requireVerifiedSupplier } from '@/lib/permissions'
 import { successResponse, handleApiError, getPaginationParams, paginationMeta } from '@/lib/utils/api'
 import { createNotification } from '@/server/services/notification'
 import { sendQuotationEmail } from '@/lib/email'
 import { isPubliclyVisibleRFQStatus } from '@/lib/rfqs/visibility'
+import { trackQuotationCreated } from '@/lib/analytics/tracking'
+import { FraudEventType } from '@prisma/client'
+import { assertFraudActionAllowed, screenFraudEvent } from '@/lib/fraud/service'
+import { FRAUD_ACTIONS } from '@/lib/fraud/shared'
 
 const createQuotationSchema = z.object({
   rfqId: z.string().optional(),
@@ -32,6 +36,14 @@ const createQuotationSchema = z.object({
 export async function GET(req: NextRequest) {
   try {
     const authUser = await requireAuth(req)
+    if (
+      !isAdmin(authUser) &&
+      !authUser.roles.includes(ROLES.BUYER) &&
+      !authUser.roles.includes(ROLES.SUPPLIER_OWNER) &&
+      !authUser.roles.includes(ROLES.SUPPLIER_STAFF)
+    ) {
+      throw new ApiError(403, 'Marketplace quotation access required')
+    }
     const { searchParams } = new URL(req.url)
     const { page, limit, skip } = getPaginationParams(searchParams)
 
@@ -49,7 +61,7 @@ export async function GET(req: NextRequest) {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: {
           rfq: { select: { id: true, productName: true, quantity: true } },
           inquiry: { select: { id: true, subject: true } },
@@ -93,13 +105,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authUser = await requireAuth(req)
-    if (!authUser.roles.includes(ROLES.SUPPLIER_OWNER) && !authUser.roles.includes(ROLES.SUPPLIER_STAFF)) {
-      throw new ApiError(403, 'Only suppliers can submit quotations')
-    }
-
     const body = await req.json()
     const data = createQuotationSchema.parse(body)
+    const authUser = await requireVerifiedSupplier(await requireRole(req, ROLES.SUPPLIER_OWNER, ROLES.SUPPLIER_STAFF), data.companyId)
     const itemsTotal = data.items.reduce((sum, item) => sum + item.totalPrice, 0)
 
     if (Math.abs(itemsTotal - data.totalPrice) > 0.01) {
@@ -108,6 +116,11 @@ export async function POST(req: NextRequest) {
 
     // Must be supplier for this company
     await requireCompanyAccess(req, data.companyId)
+    await assertFraudActionAllowed({
+      userId: authUser.userId,
+      companyId: data.companyId,
+      action: FRAUD_ACTIONS.QUOTATION_CREATE,
+    })
 
     if (!data.rfqId && !data.inquiryId) {
       throw new ApiError(400, 'Either rfqId or inquiryId is required')
@@ -218,6 +231,28 @@ export async function POST(req: NextRequest) {
         console.error('Quotation email failed:', emailError)
       }
     }
+
+    await trackQuotationCreated(data.companyId)
+
+    await screenFraudEvent({
+      req,
+      actorUserId: authUser.userId,
+      userId: authUser.userId,
+      companyId: data.companyId,
+      eventType: FraudEventType.QUOTATION_CREATE,
+      sourceModule: 'quotations',
+      title: 'Supplier quotation submitted',
+      summary: `Quotation submitted for ${data.rfqId ? 'RFQ' : 'inquiry'} workflow.`,
+      payload: {
+        rfqId: data.rfqId,
+        inquiryId: data.inquiryId,
+        totalPrice: data.totalPrice,
+        currencyCode: data.currencyCode,
+        itemCount: data.items.length,
+        deliveryTime: data.deliveryTime,
+        notes: data.notes,
+      },
+    })
 
     return successResponse(quotation, 'Quotation submitted successfully', undefined, 201)
   } catch (error) {

@@ -1,19 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { constructWebhookEvent } from '@/lib/payment/stripe'
 import prisma from '@/lib/db/prisma'
 import { createNotification } from '@/server/services/notification'
 import { sendInvoicePaidEmail } from '@/lib/email'
 import { finalizeAdCampaignPayment } from '@/lib/advertising/payment'
+import { FraudEventType } from '@prisma/client'
+import { screenFraudEvent } from '@/lib/fraud/service'
+import { assertPaymentStatusTransition, enforceWebhookIdempotency, verifyWebhookSignature } from '@/lib/payment/safety'
+import { logPaymentWebhookFailureEvent } from '@/lib/monitoring/event-helpers'
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
-  const sig = req.headers.get('stripe-signature')!
 
   let event
   try {
-    event = await constructWebhookEvent(body, sig)
+    event = await verifyWebhookSignature({
+      provider: 'STRIPE',
+      req,
+      rawBody: body,
+    }) as {
+      id: string
+      type: string
+      data: { object: unknown }
+    }
   } catch (err) {
-    return NextResponse.json({ error: 'Webhook signature invalid' }, { status: 400 })
+    const status = typeof err === 'object' && err && 'statusCode' in err ? Number(err.statusCode) || 400 : 400
+    await logPaymentWebhookFailureEvent({
+      provider: 'STRIPE',
+      message: 'Stripe webhook rejected due to invalid signature.',
+      reason: err instanceof Error ? err.message : 'invalid_signature',
+    })
+    return NextResponse.json({ error: 'Webhook signature invalid' }, { status })
   }
 
   try {
@@ -33,10 +49,17 @@ export async function POST(req: NextRequest) {
         if (metadata.kind === 'AD_CAMPAIGN' && metadata.adCampaignId) {
           const payment = await prisma.payment.findFirst({
             where: { stripePaymentId: session.id },
-            select: { id: true },
+            select: { id: true, status: true, metadata: true },
           })
 
           if (payment) {
+            const idempotency = await enforceWebhookIdempotency({
+              paymentId: payment.id,
+              eventKey: `STRIPE:${event.id}`,
+              metadata: payment.metadata,
+            })
+            if (idempotency.duplicate || payment.status === 'PAID') break
+            assertPaymentStatusTransition(payment.status, 'PAID')
             await finalizeAdCampaignPayment(payment.id, {
               checkoutSessionId: session.id,
               paymentIntentId: session.payment_intent,
@@ -47,6 +70,20 @@ export async function POST(req: NextRequest) {
         }
 
         if (metadata.kind === 'TRADE_ORDER' && metadata.tradeOrderId && metadata.buyerId && metadata.supplierCompanyId) {
+          const payment = await prisma.payment.findFirst({
+            where: { tradeOrderId: metadata.tradeOrderId, stripePaymentId: session.id },
+            select: { id: true, status: true, metadata: true },
+          })
+          if (!payment) break
+
+          const idempotency = await enforceWebhookIdempotency({
+            paymentId: payment.id,
+            eventKey: `STRIPE:${event.id}`,
+            metadata: payment.metadata,
+          })
+          if (idempotency.duplicate || payment.status === 'PAID') break
+          assertPaymentStatusTransition(payment.status, 'PAID')
+
           const order = await prisma.tradeOrder.findUnique({
             where: { id: metadata.tradeOrderId },
             include: {
@@ -79,6 +116,17 @@ export async function POST(req: NextRequest) {
                 termsAccepted: true,
               },
             }),
+            prisma.escrowTransaction.updateMany({
+              where: {
+                tradeOrderId: order.id,
+                escrowAccountId: order.escrowAccount.id,
+                type: 'FUNDING',
+                status: 'PENDING',
+              },
+              data: {
+                status: 'COMPLETED',
+              },
+            }),
             prisma.tradeOrder.update({
               where: { id: order.id },
               data: {
@@ -98,10 +146,40 @@ export async function POST(req: NextRequest) {
               data: { tradeOrderId: order.id },
             })
           }
+          await screenFraudEvent({
+            req,
+            actorUserId: metadata.buyerId,
+            userId: metadata.buyerId,
+            companyId: metadata.supplierCompanyId,
+            eventType: FraudEventType.PAYMENT_ACTIVITY,
+            sourceModule: 'payments/stripe/webhook',
+            title: 'Stripe trade order payment confirmed',
+            summary: 'Stripe checkout completed for escrow funding.',
+            payload: {
+              kind: metadata.kind,
+              tradeOrderId: metadata.tradeOrderId,
+              amount: session.amount_total,
+              currency: session.currency,
+            },
+          })
           break
         }
 
         if (metadata.kind === 'SAMPLE_ORDER' && metadata.sampleOrderId) {
+          const payment = await prisma.payment.findFirst({
+            where: { sampleOrderId: metadata.sampleOrderId, stripePaymentId: session.id },
+            select: { id: true, userId: true, status: true, metadata: true },
+          })
+          if (!payment) break
+
+          const idempotency = await enforceWebhookIdempotency({
+            paymentId: payment.id,
+            eventKey: `STRIPE:${event.id}`,
+            metadata: payment.metadata,
+          })
+          if (idempotency.duplicate || payment.status === 'PAID') break
+          assertPaymentStatusTransition(payment.status, 'PAID')
+
           const sampleOrder = await prisma.sampleOrder.findUnique({
             where: { id: metadata.sampleOrderId },
           })
@@ -140,11 +218,53 @@ export async function POST(req: NextRequest) {
               data: { sampleOrderId: sampleOrder.id },
             })
           }
+          await screenFraudEvent({
+            req,
+            actorUserId: metadata.buyerId || payment?.userId || '',
+            userId: metadata.buyerId || payment?.userId || '',
+            companyId: metadata.supplierCompanyId || sampleOrder.supplierCompanyId,
+            eventType: FraudEventType.PAYMENT_ACTIVITY,
+            sourceModule: 'payments/stripe/webhook',
+            title: 'Stripe sample order payment confirmed',
+            summary: 'Stripe checkout completed for a sample order.',
+            payload: {
+              kind: metadata.kind,
+              sampleOrderId: metadata.sampleOrderId,
+              amount: session.amount_total,
+              currency: session.currency,
+            },
+          })
           break
         }
 
         const { companyId, planId, billingCycle } = metadata
         if (!companyId || !planId) break
+
+        const subscriptionPayment = await prisma.payment.findFirst({
+          where: { stripePaymentId: session.id, userId: metadata.buyerId || undefined },
+          select: { id: true, status: true, metadata: true },
+        })
+        if (subscriptionPayment) {
+          const idempotency = await enforceWebhookIdempotency({
+            paymentId: subscriptionPayment.id,
+            eventKey: `STRIPE:${event.id}`,
+            metadata: subscriptionPayment.metadata,
+          })
+          if (idempotency.duplicate || subscriptionPayment.status === 'PAID') break
+          assertPaymentStatusTransition(subscriptionPayment.status, 'PAID')
+          await prisma.payment.update({
+            where: { id: subscriptionPayment.id },
+            data: {
+              status: 'PAID',
+              stripePaymentId: typeof session.payment_intent === 'string' ? session.payment_intent : session.id,
+              metadata: JSON.stringify({
+                checkoutSessionId: session.id,
+                paymentIntentId: session.payment_intent,
+                captureStatus: 'paid',
+              }),
+            },
+          })
+        }
 
         const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } })
         if (!plan) break
@@ -197,12 +317,37 @@ export async function POST(req: NextRequest) {
             data: { planId },
           })
         }
+        await screenFraudEvent({
+          req,
+          actorUserId: owner?.userId || metadata.buyerId || '',
+          userId: owner?.userId || metadata.buyerId || '',
+          companyId,
+          eventType: FraudEventType.PAYMENT_ACTIVITY,
+          sourceModule: 'payments/stripe/webhook',
+          title: 'Stripe subscription payment confirmed',
+          summary: 'Stripe checkout completed for subscription activation.',
+          payload: {
+            kind: metadata.kind,
+            companyId,
+            planId,
+            amount: session.amount_total,
+            currency: session.currency,
+          },
+        })
         break
       }
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as { subscription?: string; amount_paid?: number; currency?: string; id?: string }
         if (!invoice.subscription) break
+
+        const existingInvoice = invoice.id
+          ? await prisma.invoice.findFirst({
+            where: { stripeInvoiceId: invoice.id },
+            select: { id: true },
+          })
+          : null
+        if (existingInvoice) break
 
         const sub = await prisma.subscription.findFirst({
           where: { stripeSubId: invoice.subscription as string },
@@ -246,6 +391,14 @@ export async function POST(req: NextRequest) {
           include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
         })
         if (owner) {
+          const existingPayment = invoice.id
+            ? await prisma.payment.findFirst({
+              where: { stripePaymentId: invoice.id },
+              select: { id: true },
+            })
+            : null
+          if (existingPayment) break
+
           await prisma.payment.create({
             data: {
               invoiceId: dbInvoice.id,
@@ -287,6 +440,22 @@ export async function POST(req: NextRequest) {
             console.error('Stripe invoice email failed:', error)
           }
         }
+        await screenFraudEvent({
+          req,
+          actorUserId: owner?.userId || '',
+          userId: owner?.userId || '',
+          companyId: sub.companyId,
+          eventType: FraudEventType.PAYMENT_ACTIVITY,
+          sourceModule: 'payments/stripe/webhook',
+          title: 'Stripe invoice paid',
+          summary: 'Recurring Stripe invoice payment succeeded.',
+          payload: {
+            subscriptionId: sub.id,
+            invoiceId: dbInvoice.id,
+            amount,
+            currency: dbInvoice.currency,
+          },
+        })
         break
       }
 
@@ -317,6 +486,19 @@ export async function POST(req: NextRequest) {
             message: 'Your subscription payment failed. Please update your payment method.',
           })
         }
+        await screenFraudEvent({
+          req,
+          actorUserId: owner?.userId || '',
+          userId: owner?.userId || '',
+          companyId: sub.companyId,
+          eventType: FraudEventType.PAYMENT_ACTIVITY,
+          sourceModule: 'payments/stripe/webhook',
+          title: 'Stripe payment failed',
+          summary: 'Recurring Stripe invoice payment failed.',
+          payload: {
+            subscriptionId: sub.id,
+          },
+        })
         break
       }
 
@@ -332,6 +514,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true })
   } catch (err) {
+    await logPaymentWebhookFailureEvent({
+      provider: 'STRIPE',
+      message: 'Stripe webhook processing failed.',
+      reason: err instanceof Error ? err.message : 'unknown_error',
+    })
     console.error('Webhook handler error:', err)
     return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 })
   }
